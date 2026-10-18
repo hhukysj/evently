@@ -15,6 +15,10 @@ boundaries justify it.
 -   **UI:** Tailwind CSS with accessible, reusable components.
 -   **Validation:** Zod at API boundaries; PostgreSQL constraints for
     invariants.
+-   **Workspace tooling:** npm workspaces; Node.js 24.11.1 and npm
+    11.6.4 are pinned by the repository.
+-   **Development database:** PostgreSQL 17, installed locally or run
+    as the sole service in the optional Docker Compose setup.
 -   **Initial deployment:** stateless web/API instances, managed
     PostgreSQL, object storage, and a transactional email provider.
 -   **Architecture style:** modular monolith, not microservices. One
@@ -22,8 +26,9 @@ boundaries justify it.
 -   **Repository constraint:** if extending the existing Evently
     codebase, preserve its React/Vite/TypeScript + Express +
     PostgreSQL + Drizzle + React Query + Wouter + Zod + Tailwind
-    structure unless an audit identifies a concrete blocker. Do not
-    rewrite merely for preference.
+    structure unless an audit identifies a concrete blocker. The
+    from-scratch workspace paths are `apps/web`, `apps/api`, and
+    `packages/shared`; do not rewrite merely for preference.
 
 ## 2. System boundary
 
@@ -47,50 +52,63 @@ booking state.
 ## 3. Suggested repository layout
 
 ``` text
-client/
-  src/
-    app/                 # routing, providers, app shell
-    components/          # shared UI
-    features/
-      auth/
-      discovery/
-      events/
-      professionals/
-      bookings/
-      messaging/
-      reviews/
-      notifications/
-    lib/                 # API client, query client, utilities
-server/
-  src/
-    app.ts               # Express configuration
-    routes/              # HTTP route registration only
-    middleware/          # auth, validation, rate limits, errors
-    modules/
-      auth/
-      users/
-      professionals/
-      discovery/
-      events/
-      bookings/
-      conversations/
-      reviews/
-      notifications/
-      moderation/
-    db/                  # schema, migrations, connection
-    services/            # email, storage, geocoding adapters
-    config/              # validated environment config
-shared/
-  schemas/               # shared request/response types where safe
+apps/
+  web/
+    package.json
+    src/
+      app/               # routing, providers, app shell
+      components/        # shared UI
+      features/
+        auth/
+        discovery/
+        events/
+        professionals/
+        bookings/
+        messaging/
+        reviews/
+        notifications/
+      lib/               # API client, query client, utilities
+  api/
+    package.json
+    src/
+      app.ts             # Express configuration
+      routes/            # HTTP route registration only
+      middleware/        # auth, validation, rate limits, errors
+      modules/
+        auth/
+        users/
+        professionals/
+        discovery/
+        events/
+        bookings/
+        conversations/
+        reviews/
+        notifications/
+        moderation/
+      db/                # schema and database connection
+      services/          # email, storage, geocoding adapters
+      config/            # validated environment config
+    drizzle/             # versioned SQL migrations (generated/reviewed)
+packages/
+  shared/
+    package.json
+    src/
+      schemas/           # shared request/response schemas and types
 tests/
   integration/
   e2e/
+docs/
+  decisions/
 ```
 
 Adapt to the existing repository rather than moving files wholesale.
 Keep controllers thin: route → validation → domain service →
 repository/database → response. Do not put business logic in React
 components or route handlers.
+
+The Phase 0 workspace package manifests intentionally contain no
+runtime dependencies or application code. Phase 1 adds the app scaffolds
+and executable workspace scripts.
 
 ## 4. Domain modules and ownership
 
@@ -285,3 +303,38 @@ configuration at startup and fail fast: `DATABASE_URL`,
 
 Never commit `.env`, real credentials, production dumps, or session
 secrets. Rotate any secret exposed in logs or source control.
+
+For local PostgreSQL Compose, the root `.env` also supplies
+`POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`; keep it
+untracked and use development-only values. `OBJECT_STORAGE_*` will be
+defined precisely when an object-storage provider is selected.
+
+## 13. Local database and migration workflow
+
+- Use PostgreSQL 17 for local development. A developer may install it
+  locally or use the optional root `docker-compose.yml`, which runs
+  PostgreSQL only, binds its port to loopback, and stores data in a named
+  volume. The web and API processes run on the host.
+- Keep database schema definitions in `apps/api/src/db` and reviewed
+  Drizzle SQL migrations in `apps/api/drizzle`.
+- Generate migrations from schema changes with Drizzle Kit, inspect the
+  generated SQL, and commit each migration with its journal metadata.
+  Apply committed migrations with Drizzle's migration runner; do not use
+  schema push for deployed environments.
+- CI and deployment must apply migrations from a clean database and
+  preserve migration history. Production migration and rollback
+  procedures will be specified before staging; never assume a down
+  migration is safe for data.
+- Phase 1 will add the workspace scripts that invoke Drizzle Kit. No
+  schema, migration, or migration command is part of the Phase 0
+  baseline.
+
+## 14. Deployment baseline
+
+Start with one static web deployment, one long-running stateless Node.js
+API, and managed PostgreSQL. Select providers and regions before
+staging, verify current limits and costs, enable appropriate database
+backups, and use separate databases and secret stores for development,
+staging, and production. Object storage and transactional email are
+provider decisions to make when their features are implemented. No
+cache, queue, or other infrastructure is required by this baseline.
