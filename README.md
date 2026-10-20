@@ -14,6 +14,7 @@ other out-of-scope work are described in [PRD.md](./PRD.md).
 - [design.md](./design.md) — UX, accessibility, and visual direction
 - [PHASE_PLAN.md](./PHASE_PLAN.md) — implementation phases and exit gates
 - [docs/decisions/0001-foundation.md](./docs/decisions/0001-foundation.md) — Phase 0 decisions
+- [docs/dependencies.md](./docs/dependencies.md) — dependency purpose, licenses, and impact
 
 ## Development baseline
 
@@ -23,21 +24,27 @@ other out-of-scope work are described in [PRD.md](./PRD.md).
 - Git is required. Docker Engine with Docker Compose is optional and used
   only to run the local PostgreSQL service.
 
-The workspace package manifests currently contain no application code or
-runtime dependencies. The web app, API, schemas, and database migration
-commands are introduced in Phase 1.
+The current foundation provides a minimal React/Vite app, Express API, shared
+API contracts, and PostgreSQL connection/migration tooling. Marketplace
+features are not implemented.
 
 ## Local database
 
 Choose either local PostgreSQL 17 or the optional Compose service. To use
-Compose, create a local, untracked `.env` file in the repository root with
-`POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB` set to development-only
-values. Then run:
+Compose, copy `.env.example` to `.env` and fill the blank names with
+development-only values. Set `POSTGRES_USER`, `POSTGRES_PASSWORD`, and
+`POSTGRES_DB` for Compose, plus `DATABASE_URL` for the API. Never commit `.env`.
+Then run:
 
 ```powershell
+Copy-Item .env.example .env
+# Edit .env with local-only values before starting the database.
 docker compose up -d db
 docker compose ps
 ```
+
+To develop the frontend without Docker or a database, only install
+dependencies and start the web workspace as described below.
 
 The database port is bound to `127.0.0.1`; Compose persists data in a named
 Docker volume. Stop the service with `docker compose down`. To retain the
@@ -52,27 +59,54 @@ From the repository root, install the locked workspace dependencies:
 npm ci
 ```
 
-At this Phase 0 baseline, there are no app start or migration scripts yet.
-Phase 1 will add the Vite web app, Express API, environment validation, and
-Drizzle migration scripts. Until then, only the optional database service can
-be started locally.
+Start the frontend (no database required):
 
-The API will use `DATABASE_URL` for PostgreSQL. Future application
-configuration includes `SESSION_SECRET`, `APP_ORIGIN`, `API_ORIGIN`,
-`EMAIL_PROVIDER_API_KEY`, `EMAIL_FROM`, object-storage settings, and an
-optional geocoding key only if that provider is enabled. Set secrets in an
-untracked local `.env` file or the deployment platform's secret manager; do
-not commit real values. See [architecture.md](./architecture.md#12-environment-variables)
-for details.
+```powershell
+npm run dev:web
+```
+
+Start the API after setting `DATABASE_URL` in `.env` (the API can start without
+a live database, but `/ready` will return `503` until the database responds):
+
+```powershell
+npm run dev:api
+```
+
+The API listens on `http://127.0.0.1:3001` by default. `GET /health` checks
+process liveness, `GET /ready` checks database readiness, and
+`GET /api/v1/health` uses the versioned API response envelope. `PORT` can
+override the default API port. `NODE_ENV` defaults to `development`.
 
 ## Database changes
 
-Drizzle schema changes will be kept in `apps/api/src/db`; reviewed, versioned
-SQL migrations will be kept in `apps/api/drizzle`. The Phase 1 workflow will
-generate migrations from schema changes, review and commit the SQL, and apply
-them with Drizzle's migration runner. Migrations must work from an empty
-database and must be repeatable in CI and deployment. Do not use schema push
-as a substitute for production migrations.
+Drizzle schema changes live in `apps/api/src/db`; reviewed, versioned SQL
+migrations live in `apps/api/drizzle`. With `DATABASE_URL` set, generate and
+inspect migration SQL before applying it:
+
+```powershell
+npm run db:generate --workspace @evently/api
+npm run db:migrate --workspace @evently/api
+```
+
+Commit generated SQL and its Drizzle metadata. Migrations must work from an
+empty database and be repeatable in CI and deployment. Do not use schema push
+as a substitute for reviewed migrations. The current baseline migration runs
+`SELECT 1` only to establish migration history; Phase 1 adds no product tables.
+The first schema change should produce the first application-schema migration.
+
+## Checks
+
+```powershell
+npm run typecheck
+npm run lint
+npm run format:check
+npm test
+npm run build
+```
+
+`npm run check` runs all of these checks in sequence. CI additionally applies
+the migration set twice to PostgreSQL 17 to verify clean-database setup and
+repeatable migration tracking.
 
 ## Deployment assumptions
 
@@ -84,8 +118,14 @@ production provider has been selected. Keep development, staging, and
 production databases and secrets separate. See the decision log for current
 choices and unresolved decisions.
 
+Only `DATABASE_URL`, `PORT`, and `NODE_ENV` are currently read by the API.
+Authentication, email, storage, and geocoding configuration will be added
+when those capabilities enter scope. `.env.example` contains variable names
+without credential values; use deployment secret management outside local
+development.
+
 ## Phase discipline
 
 Work only on the current phase in [PHASE_PLAN.md](./PHASE_PLAN.md). Do not
-implement marketplace features before their phase, and do not begin Phase 1
-until the owner approves Phase 0.
+implement marketplace features before their phase, and do not begin the next
+phase until the owner approves the current phase.

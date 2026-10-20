@@ -296,10 +296,11 @@ traffic, workload, and operational design.
 
 ## 12. Environment variables
 
-Document names in `.env.example` without real values. Validate required
-configuration at startup and fail fast: `DATABASE_URL`,
-`SESSION_SECRET`, `APP_ORIGIN`, `API_ORIGIN`, `EMAIL_PROVIDER_API_KEY`,
-`EMAIL_FROM`, `OBJECT_STORAGE_*`, and geocoding keys only if enabled.
+Document names in `.env.example` without real values. The Phase 1 API
+validates `DATABASE_URL` at startup and accepts `PORT` and `NODE_ENV`.
+Introduce `SESSION_SECRET`, `APP_ORIGIN`, `API_ORIGIN`,
+`EMAIL_PROVIDER_API_KEY`, `EMAIL_FROM`, `OBJECT_STORAGE_*`, and geocoding
+keys only when the corresponding capability is implemented.
 
 Never commit `.env`, real credentials, production dumps, or session
 secrets. Rotate any secret exposed in logs or source control.
@@ -325,9 +326,9 @@ defined precisely when an object-storage provider is selected.
   preserve migration history. Production migration and rollback
   procedures will be specified before staging; never assume a down
   migration is safe for data.
-- Phase 1 will add the workspace scripts that invoke Drizzle Kit. No
-  schema, migration, or migration command is part of the Phase 0
-  baseline.
+- Workspace scripts invoke Drizzle Kit from `apps/api`. The Phase 1
+  baseline migration runs `SELECT 1` and creates no product tables. The
+  first application schema change should produce a reviewed SQL migration.
 
 ## 14. Deployment baseline
 
@@ -338,3 +339,18 @@ backups, and use separate databases and secret stores for development,
 staging, and production. Object storage and transactional email are
 provider decisions to make when their features are implemented. No
 cache, queue, or other infrastructure is required by this baseline.
+
+## 15. Phase 1 API foundation
+
+- `GET /health` is a liveness probe and does not require PostgreSQL.
+- `GET /ready` runs `SELECT 1`; it returns a safe `503` error envelope if
+  PostgreSQL is unavailable.
+- Versioned application routes are mounted below `/api/v1`. Success
+  responses use a `data` envelope; errors use `error` with `code`,
+  `message`, and a generated `requestId`. Production errors must not expose
+  exception details.
+- The API binds to loopback for local development. The Vite dev server also
+  binds to loopback and needs no database configuration.
+- CI runs strict TypeScript checks, ESLint, Prettier verification, Vitest,
+  and builds. Its PostgreSQL 17 service applies the committed migrations
+  twice to verify the clean-database and repeat-run workflow.

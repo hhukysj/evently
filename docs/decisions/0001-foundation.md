@@ -40,19 +40,19 @@ implementing product behavior or selecting production providers.
 
 The application configuration planned for Phase 1 includes:
 
-| Variable | Purpose |
-| --- | --- |
-| `DATABASE_URL` | PostgreSQL connection string for the API |
-| `SESSION_SECRET` | Server-side session signing/secret material |
-| `APP_ORIGIN` | Exact browser origin allowed by the API |
-| `API_ORIGIN` | Public API origin used by the application |
-| `EMAIL_PROVIDER_API_KEY` | Transactional email provider credential |
-| `EMAIL_FROM` | Verified sender address |
-| `OBJECT_STORAGE_*` | Provider-specific endpoint, bucket, region, and credentials; define exact names after provider selection |
-| `GEOCODING_API_KEY` | Optional; only if geocoding is enabled |
-| `POSTGRES_USER` | Local Compose database user |
-| `POSTGRES_PASSWORD` | Local Compose development-only password |
-| `POSTGRES_DB` | Local Compose database name |
+| Variable                 | Purpose                                                                                                  |
+| ------------------------ | -------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`           | PostgreSQL connection string for the API                                                                 |
+| `SESSION_SECRET`         | Server-side session signing/secret material                                                              |
+| `APP_ORIGIN`             | Exact browser origin allowed by the API                                                                  |
+| `API_ORIGIN`             | Public API origin used by the application                                                                |
+| `EMAIL_PROVIDER_API_KEY` | Transactional email provider credential                                                                  |
+| `EMAIL_FROM`             | Verified sender address                                                                                  |
+| `OBJECT_STORAGE_*`       | Provider-specific endpoint, bucket, region, and credentials; define exact names after provider selection |
+| `GEOCODING_API_KEY`      | Optional; only if geocoding is enabled                                                                   |
+| `POSTGRES_USER`          | Local Compose database user                                                                              |
+| `POSTGRES_PASSWORD`      | Local Compose development-only password                                                                  |
+| `POSTGRES_DB`            | Local Compose database name                                                                              |
 
 Create the local `.env` file manually and fill only variables needed by the
 selected local services. Do not commit it. Phase 1 will add the documented
@@ -64,17 +64,27 @@ selected local services. Do not commit it. Phase 1 will add the documented
    root.
 2. Install PostgreSQL 17 locally, or configure the three `POSTGRES_*` values
    in an untracked root `.env` and run `docker compose up -d db`.
-3. In Phase 1, set `DATABASE_URL`, run the documented Drizzle migration
-   command, and start the web and API through workspace scripts. Those app
-   commands do not exist in the Phase 0 baseline.
+3. Set `DATABASE_URL`, run the documented Drizzle migration command, and
+   start the web and API through workspace scripts. The Vite frontend can
+   start without a database; API readiness reports database availability.
 
 ## Verification and constraints
 
 At decision time, Node.js 24.11.1, npm 11.6.4, Git 2.51.1.windows.1, and
 Docker CLI 29.7.2 were available. Docker could not connect to its Linux Engine
-named pipe, so container startup has not been verified. No application
-dependencies, production services, credentials, or migrations are introduced
-by this decision.
+named pipe, so container startup was not verified during Phase 0. Phase 0
+introduced no application dependencies, production services, credentials, or
+migrations. Phase 1 adds the application scaffold and development tooling
+without selecting production providers.
+
+## Phase 1 implementation
+
+The scaffold now includes React/Vite, Express, shared Zod API contracts,
+PostgreSQL connectivity, Drizzle Kit migration commands, and CI checks. The
+current API reads `DATABASE_URL`, `PORT`, and `NODE_ENV`; future secrets and
+provider settings remain deferred until the related features are implemented.
+See [README.md](../../README.md) for current setup and
+[dependencies.md](../dependencies.md) for dependency impact.
 
 ## Deferred decisions
 
