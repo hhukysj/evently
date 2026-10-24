@@ -77,4 +77,20 @@ describe("API health endpoints", () => {
     expect(response.text).not.toContain("Unexpected end of JSON input");
     expect(log).toHaveBeenCalledOnce();
   });
+
+  it("rejects unsupported form encodings with a safe client error", async () => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const response = await request(createApp({ query: vi.fn() }))
+      .post("/api/v1/health")
+      .set("Content-Type", "application/x-www-form-urlencoded; charset=made-up")
+      .send("email=test%40example.com");
+
+    expect(response.status).toBe(415);
+    expect(response.body.error.code).toBe("UNSUPPORTED_MEDIA_TYPE");
+    expect(response.body.error.message).toBe(
+      "Request body encoding is not supported",
+    );
+    expect(response.text).not.toContain("made-up");
+    expect(log).toHaveBeenCalledOnce();
+  });
 });

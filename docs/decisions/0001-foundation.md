@@ -80,11 +80,45 @@ without selecting production providers.
 ## Phase 1 implementation
 
 The scaffold now includes React/Vite, Express, shared Zod API contracts,
-PostgreSQL connectivity, Drizzle Kit migration commands, and CI checks. The
-current API reads `DATABASE_URL`, `PORT`, and `NODE_ENV`; future secrets and
-provider settings remain deferred until the related features are implemented.
-See [README.md](../../README.md) for current setup and
+PostgreSQL connectivity, Drizzle Kit migration commands, and CI checks. Phase
+2 adds `SESSION_SECRET`, exact `APP_ORIGIN`, and bounded `TRUST_PROXY_HOPS`
+configuration. See the Phase 2 authentication decision below,
+[README.md](../../README.md) for current setup, and
 [dependencies.md](../dependencies.md) for dependency impact.
+
+## Phase 2 authentication decision
+
+- Use `argon2` with Argon2id for password hashes; registration accepts only
+  normalized email and password and always assigns the `customer` role.
+- Use `express-session` with `connect-pg-simple`; keep session data in the
+  existing PostgreSQL `sessions` table contract. Sessions expire after eight
+  hours, rotate at successful login, and are destroyed at logout.
+- Protect unsafe cookie-authenticated requests with a synchronizer token and
+  exact `Origin` validation. The browser API origin is configured explicitly;
+  Vite proxies `/api` during local web development.
+- Use `HttpOnly`, `SameSite=Lax` cookies and a production-only `Secure`
+  `__Host-` cookie. Reverse-proxy trust is disabled by default and configured
+  as an explicit hop count.
+- Store authentication rate-limit counters in PostgreSQL so independent API
+  instances share the same limits without introducing Redis. Hashed client
+  identifiers are stored, expired counters are periodically pruned, and a
+  store failure rejects the request rather than bypassing the limit.
+- Store verification and password-reset token hashes with 30-minute expiry;
+  consume them atomically and invalidate existing sessions on password
+  reset. No raw token is persisted.
+- Enforce admin authorization using the active database role. User
+  suspension, session revocation, and an audit record are one transaction.
+- Keep outbound email behind `EmailDeliveryProvider`. The production adapter
+  is deliberately unconfigured and returns explicit 503 responses; it never
+  claims that email was delivered. `NODE_ENV=development` uses a bounded
+  in-memory sink and an explicitly development-only no-store inbox route so
+  local verification/reset links can be tested without sending email. Raw
+  tokens are not logged, and the inbox route is not mounted in production. A
+  real provider must be selected and configured before production registration
+  and account-email flows can be enabled.
+- Registration and account-email requests use neutral success responses when
+  a provider is configured. Login errors do not distinguish missing,
+  unverified, inactive, or wrong-password accounts.
 
 ## Deferred decisions
 

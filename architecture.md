@@ -198,6 +198,21 @@ Use `EXPLAIN ANALYZE` before adding expensive indexes.
     progressive abuse controls without leaking whether an email exists.
 -   Set secure headers, redact sensitive logs, use generic production
     errors, and keep secrets in environment/secret management.
+
+Phase 2 implements Argon2id passwords, customer registration, login/logout,
+current-user lookup, email verification and password-reset token workflows,
+PostgreSQL-backed eight-hour sessions, session rotation and revocation,
+exact-origin checks, synchronizer CSRF tokens, and shared PostgreSQL-backed
+authentication rate limits. The production session cookie uses the `__Host-`
+prefix and requires HTTPS. Admin authorization is enforced from the active
+database role, and administrative suspension is transactionally audited.
+Tokens are short-lived, single-use, and stored as hashes. Email delivery is
+behind a provider interface. In development, a bounded in-memory email sink
+exposes links only through a development-only, no-store inbox endpoint and
+the frontend local inbox; it does not send email or log tokens. The endpoint
+is not mounted in production. Production uses the unconfigured adapter and
+returns explicit 503 errors for registration and account-email requests until
+a real provider is selected.
 -   Do not fetch arbitrary user-supplied URLs from the server. Protect
     against XSS by safe rendering and sanitization of any permitted rich
     text.

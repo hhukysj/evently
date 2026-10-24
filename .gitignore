@@ -27,6 +27,9 @@ service-account*.json
 *.pem
 *.p12
 *.pfx
+*.crt
+*.cer
+*.jks
 
 # Editor and operating system files
 .DS_Store

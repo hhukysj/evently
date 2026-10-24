@@ -72,6 +72,29 @@ Exit gate:
 - Admin routes are server-protected and audited.
 - Reset and verification tokens are short-lived, single-use, and stored safely.
 
+Status: Phase 2 authentication screens and API flows are implemented for local
+development. Registration, login, verification, forgot-password, and
+reset-password screens are connected to the API with same-origin credentials,
+CSRF tokens, client-side form constraints, accessible feedback, and loading
+states. Development uses a bounded, in-memory mail sink; its no-store inbox
+is mounted only in `NODE_ENV=development`, does not send email, and does not
+log tokens. Production keeps the unconfigured provider and does not mount the
+token inbox.
+
+Verified locally against PostgreSQL 17: the integration suite passed (3
+database-backed tests, including sessions, logout, verification/reset,
+unauthorized admin access, expiry/single-use checks, audited admin action,
+and shared rate-limit counters); `npm run check` passed (28 unit/UI tests,
+typecheck, lint, formatting, and production builds); `npm audit --omit=dev`
+reported zero vulnerabilities; and the Drizzle migration consistency check
+passed. The production web build was verified to use production JSX and omit
+the development inbox endpoint/UI.
+
+Phase 2 is **ready for owner review, not approved**. Production registration
+and account-email flows remain intentionally unavailable (`503`) until a real
+email provider is selected and configured. Do not begin Phase 3 without
+owner approval.
+
 ## Phase 3 — Design system and ReactBits selection
 
 Tasks:

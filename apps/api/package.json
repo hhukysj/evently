@@ -14,14 +14,20 @@
   },
   "dependencies": {
     "@evently/shared": "*",
+    "argon2": "^0.45.1",
+    "connect-pg-simple": "^10.0.0",
     "dotenv": "^16.4.0",
     "drizzle-orm": "^0.45.4",
     "express": "^5.0.0",
+    "express-rate-limit": "^8.7.1",
+    "express-session": "^1.19.0",
     "pg": "^8.13.0",
-    "zod": "^3.24.0"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
+    "@types/connect-pg-simple": "^7.0.3",
     "@types/express": "^5.0.0",
+    "@types/express-session": "^1.19.0",
     "@types/pg": "^8.11.0",
     "@types/supertest": "^6.0.0",
     "drizzle-kit": "^0.31.11",

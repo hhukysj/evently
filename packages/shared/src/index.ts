@@ -9,9 +9,9 @@ export const HealthResponseSchema = z.object({
 
 export const ApiErrorResponseSchema = z.object({
   error: z.object({
-    code: z.string(),
-    message: z.string(),
-    requestId: z.string().uuid(),
+    code: z.string().min(1).max(64),
+    message: z.string().min(1).max(1024),
+    requestId: z.uuid(),
   }),
 });
 

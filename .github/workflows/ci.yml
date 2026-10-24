@@ -28,6 +28,8 @@ jobs:
     env:
       DATABASE_URL: postgresql://evently:evently_test_only@localhost:5432/evently_test
       NODE_ENV: test
+      SESSION_SECRET: ci-only-session-secret-not-for-deployment
+      APP_ORIGIN: http://127.0.0.1:5173
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -41,5 +43,7 @@ jobs:
       - run: npm run check
       - name: Check database migrations from an empty database
         run: npm run db:migrate --workspace @evently/api
+      - name: Run PostgreSQL authentication integration tests
+        run: npm run test:integration
       - name: Verify migrations are idempotently recorded
         run: npm run db:migrate --workspace @evently/api

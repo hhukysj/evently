@@ -8,6 +8,27 @@
       "when": 1792311848474,
       "tag": "0000_phase1-baseline",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1792484044980,
+      "tag": "0001_breezy_cannonball",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792484159526,
+      "tag": "0002_misty_major_mapleleaf",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792485282051,
+      "tag": "0003_slimy_junta",
+      "breakpoints": true
     }
   ]
 }

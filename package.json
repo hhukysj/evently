@@ -18,9 +18,10 @@
     "dev:api": "npm run dev --workspace @evently/api",
     "typecheck": "npm run build --workspace @evently/shared && npm run typecheck --workspaces --if-present",
     "lint": "eslint apps packages eslint.config.js vitest.config.ts",
-    "format": "prettier --write \"apps/**/*.{ts,tsx,json,html,css}\" \"packages/**/*.{ts,tsx,json}\" \"docs/**/*.md\" \"README.md\" \"*.{json,js}\" \".github/workflows/*.yml\"",
-    "format:check": "prettier --check \"apps/**/*.{ts,tsx,json,html,css}\" \"packages/**/*.{ts,tsx,json}\" \"docs/**/*.md\" \"README.md\" \"*.{json,js}\" \".github/workflows/*.yml\"",
+    "format": "prettier --write \"apps/**/*.{ts,tsx,js,json,html,css}\" \"packages/**/*.{ts,tsx,json}\" \"docs/**/*.md\" \"README.md\" \"*.{json,js}\" \".github/workflows/*.yml\"",
+    "format:check": "prettier --check \"apps/**/*.{ts,tsx,js,json,html,css}\" \"packages/**/*.{ts,tsx,json}\" \"docs/**/*.md\" \"README.md\" \"*.{json,js}\" \".github/workflows/*.yml\"",
     "test": "npm run build --workspace @evently/shared && vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
     "build": "npm run build --workspace @evently/shared && npm run build --workspace @evently/api && npm run build --workspace @evently/web",
     "check": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build"
   },

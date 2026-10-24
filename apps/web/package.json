@@ -7,7 +7,7 @@
     "dev": "vite --host 127.0.0.1",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "build": "vite build"
+    "build": "node build.js"
   },
   "dependencies": {
     "@evently/shared": "*",

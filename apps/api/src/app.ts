@@ -5,9 +5,32 @@ import express, {
   type Response,
 } from "express";
 import type { ApiErrorResponse, HealthResponse } from "@evently/shared";
+import type session from "express-session";
+import type { Store } from "express-rate-limit";
+import { createSessionMiddleware } from "./middleware/sessions.js";
+import {
+  createAdminRouter,
+  createAuthRouter,
+  corsForOrigin,
+} from "./modules/auth/routes.js";
+import type { DevelopmentEmailInbox } from "./modules/auth/email-delivery.js";
+import type { AuthService } from "./modules/auth/service.js";
 
 export interface DatabaseProbe {
   query: (query: "SELECT 1") => Promise<unknown>;
+}
+
+export interface AuthAppConfiguration {
+  service: AuthService;
+  environment: "development" | "test" | "production";
+  developmentEmailInbox?: DevelopmentEmailInbox;
+  sessionStore: session.Store;
+  sessionSecret: string;
+  appOrigin: string;
+  secureCookies: boolean;
+  cookieName: string;
+  trustProxyHops: number;
+  rateLimitStoreFactory?: (scope: string) => Store;
 }
 
 function requestId(response: Response): string {
@@ -29,15 +52,24 @@ function sendError(
   });
 }
 
-export function createApp(database: DatabaseProbe) {
+export function createApp(
+  database: DatabaseProbe,
+  authConfiguration?: AuthAppConfiguration,
+) {
   const app = express();
 
   app.disable("x-powered-by");
+  if (authConfiguration && authConfiguration.trustProxyHops > 0) {
+    app.set("trust proxy", authConfiguration.trustProxyHops);
+  }
   app.use((_request: Request, response: Response, next) => {
     response.locals.requestId = randomUUID();
     next();
   });
   app.use(express.json({ limit: "32kb" }));
+  app.use(
+    express.urlencoded({ extended: false, limit: "32kb", parameterLimit: 100 }),
+  );
 
   app.get("/health", (_request, response: Response<HealthResponse>) => {
     response.json({
@@ -75,6 +107,52 @@ export function createApp(database: DatabaseProbe) {
       },
     });
   });
+
+  if (authConfiguration) {
+    const authApi = express.Router();
+    authApi.use(corsForOrigin(authConfiguration.appOrigin));
+    authApi.use(
+      createSessionMiddleware({
+        secret: authConfiguration.sessionSecret,
+        secureCookies: authConfiguration.secureCookies,
+        store: authConfiguration.sessionStore,
+      }),
+    );
+    authApi.use(
+      "/auth",
+      createAuthRouter({
+        service: authConfiguration.service,
+        appOrigin: authConfiguration.appOrigin,
+        cookieName: authConfiguration.cookieName,
+        secureCookies: authConfiguration.secureCookies,
+        rateLimitStoreFactory: authConfiguration.rateLimitStoreFactory,
+      }),
+    );
+    authApi.use(
+      "/admin",
+      createAdminRouter({
+        service: authConfiguration.service,
+        appOrigin: authConfiguration.appOrigin,
+        cookieName: authConfiguration.cookieName,
+        secureCookies: authConfiguration.secureCookies,
+        rateLimitStoreFactory: authConfiguration.rateLimitStoreFactory,
+      }),
+    );
+    if (
+      authConfiguration.environment === "development" &&
+      authConfiguration.developmentEmailInbox
+    ) {
+      const developmentEmailInbox = authConfiguration.developmentEmailInbox;
+      authApi.get("/dev/email-inbox", (_request, response) => {
+        response.setHeader("Cache-Control", "no-store");
+        response.json({
+          data: { messages: developmentEmailInbox.listMessages() },
+        });
+      });
+    }
+    apiV1.use(authApi);
+  }
+
   app.use("/api/v1", apiV1);
 
   app.use("/api/v1", (_request, response) => {
@@ -101,7 +179,7 @@ export function createApp(database: DatabaseProbe) {
       typeof error === "object" &&
       error !== null &&
       "status" in error &&
-      (error.status === 400 || error.status === 413)
+      (error.status === 400 || error.status === 413 || error.status === 415)
         ? error.status
         : 500;
     sendError(
@@ -111,12 +189,16 @@ export function createApp(database: DatabaseProbe) {
         ? "BAD_REQUEST"
         : status === 413
           ? "PAYLOAD_TOO_LARGE"
-          : "INTERNAL_SERVER_ERROR",
+          : status === 415
+            ? "UNSUPPORTED_MEDIA_TYPE"
+            : "INTERNAL_SERVER_ERROR",
       status === 400
         ? "Request body is invalid"
         : status === 413
           ? "Request body is too large"
-          : "An unexpected error occurred",
+          : status === 415
+            ? "Request body encoding is not supported"
+            : "An unexpected error occurred",
     );
   };
   app.use(errorHandler);

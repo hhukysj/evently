@@ -21,4 +21,21 @@ describe("shared API contracts", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("bounds API error fields and rejects empty values", () => {
+    const response = (code: string, message: string) =>
+      ApiErrorResponseSchema.safeParse({
+        error: {
+          code,
+          message,
+          requestId: "7d984179-9852-45ca-bacb-33a1e21e051c",
+        },
+      }).success;
+
+    expect(response("NOT_FOUND", "API route not found")).toBe(true);
+    expect(response("", "API route not found")).toBe(false);
+    expect(response("N".repeat(65), "API route not found")).toBe(false);
+    expect(response("NOT_FOUND", "")).toBe(false);
+    expect(response("NOT_FOUND", "m".repeat(1025))).toBe(false);
+  });
 });
