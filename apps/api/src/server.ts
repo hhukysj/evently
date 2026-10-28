@@ -8,6 +8,8 @@ import {
 } from "./modules/auth/email-delivery.js";
 import { PostgresUserRepository } from "./modules/auth/repository.js";
 import { PasswordAuthService } from "./modules/auth/service.js";
+import { PostgresProviderRepository } from "./modules/providers/repository.js";
+import { MarketplaceProviderService } from "./modules/providers/service.js";
 import {
   createPostgresSessionStore,
   sessionCookieName,
@@ -27,6 +29,9 @@ const app = createApp(pool, {
   service: new PasswordAuthService(
     new PostgresUserRepository(db),
     developmentEmailDelivery ?? new UnconfiguredEmailDelivery(),
+  ),
+  providerService: new MarketplaceProviderService(
+    new PostgresProviderRepository(db),
   ),
   sessionStore,
   sessionSecret: env.SESSION_SECRET,

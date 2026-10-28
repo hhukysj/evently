@@ -17,6 +17,7 @@ export interface AuthUser {
   email: string;
   passwordHash: string;
   role: UserRole;
+  authVersion: number;
   status: UserStatus;
   emailVerifiedAt: Date | null;
   createdAt: Date;
@@ -170,7 +171,11 @@ export class PostgresUserRepository implements UserRepository {
 
       const updated = await transaction
         .update(users)
-        .set({ passwordHash, updatedAt: now })
+        .set({
+          passwordHash,
+          authVersion: sql`${users.authVersion} + 1`,
+          updatedAt: now,
+        })
         .where(
           and(
             eq(users.id, token.userId),
@@ -211,7 +216,11 @@ export class PostgresUserRepository implements UserRepository {
     return this.database.transaction(async (transaction) => {
       const [target] = await transaction
         .update(users)
-        .set({ status: "suspended", updatedAt: new Date() })
+        .set({
+          status: "suspended",
+          authVersion: sql`${users.authVersion} + 1`,
+          updatedAt: new Date(),
+        })
         .where(and(eq(users.id, targetUserId), eq(users.status, "active")))
         .returning({ id: users.id });
       if (!target) {

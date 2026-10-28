@@ -15,6 +15,12 @@ import {
 } from "./modules/auth/routes.js";
 import type { DevelopmentEmailInbox } from "./modules/auth/email-delivery.js";
 import type { AuthService } from "./modules/auth/service.js";
+import {
+  createAdminProviderApplicationRouter,
+  createProfessionalRouter,
+  createProviderApplicationRouter,
+} from "./modules/providers/routes.js";
+import type { ProviderService } from "./modules/providers/service.js";
 
 export interface DatabaseProbe {
   query: (query: "SELECT 1") => Promise<unknown>;
@@ -22,6 +28,7 @@ export interface DatabaseProbe {
 
 export interface AuthAppConfiguration {
   service: AuthService;
+  providerService?: ProviderService;
   environment: "development" | "test" | "production";
   developmentEmailInbox?: DevelopmentEmailInbox;
   sessionStore: session.Store;
@@ -138,6 +145,28 @@ export function createApp(
         rateLimitStoreFactory: authConfiguration.rateLimitStoreFactory,
       }),
     );
+    if (authConfiguration.providerService) {
+      const providerRouteConfiguration = {
+        authService: authConfiguration.service,
+        providerService: authConfiguration.providerService,
+        appOrigin: authConfiguration.appOrigin,
+        cookieName: authConfiguration.cookieName,
+        secureCookies: authConfiguration.secureCookies,
+        rateLimitStoreFactory: authConfiguration.rateLimitStoreFactory,
+      };
+      authApi.use(
+        "/provider-applications",
+        createProviderApplicationRouter(providerRouteConfiguration),
+      );
+      authApi.use(
+        "/admin/provider-applications",
+        createAdminProviderApplicationRouter(providerRouteConfiguration),
+      );
+      authApi.use(
+        "/professional",
+        createProfessionalRouter(providerRouteConfiguration),
+      );
+    }
     if (
       authConfiguration.environment === "development" &&
       authConfiguration.developmentEmailInbox

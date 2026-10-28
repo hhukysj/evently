@@ -22,6 +22,7 @@ Do not add payment processing until this loop works reliably.
 ## Phase 0 — Product and repository setup
 
 Tasks:
+
 1. Create a Git repository named `evently`; add a README, `.gitignore`, and this plan/spec set.
 2. Create a package-manager lockfile and pin supported Node.js version in project docs.
 3. Choose one monorepo layout and stick to it:
@@ -34,6 +35,7 @@ Tasks:
 6. Do not implement product features yet.
 
 Exit gate:
+
 - Repository has a clean initial commit.
 - README explains setup and the product scope.
 - No credentials or `.env` files are committed.
@@ -41,6 +43,7 @@ Exit gate:
 ## Phase 1 — Local development foundation
 
 Tasks:
+
 1. Scaffold React + Vite + TypeScript frontend.
 2. Scaffold Express + TypeScript API.
 3. Configure strict TypeScript, formatting/linting, environment validation, and consistent error handling.
@@ -51,6 +54,7 @@ Tasks:
 8. Add a small `/api/v1` convention and versioned response/error contract.
 
 Exit gate:
+
 - A new developer can follow the README and run web, API, and database locally.
 - A clean database can be migrated from zero.
 - Build and checks pass.
@@ -59,6 +63,7 @@ Exit gate:
 ## Phase 2 — Authentication and authorization
 
 Tasks:
+
 1. Implement registration, login, logout, current-user endpoint, email verification, forgot/reset password, and session revocation.
 2. Use a mature server-side session library and PostgreSQL-backed session store for the browser app; use secure cookies, session rotation, CSRF protection, exact CORS origins, and rate limits.
 3. Hash passwords with Argon2id or a vetted supported implementation. Never invent cryptography.
@@ -67,6 +72,7 @@ Tasks:
 6. Add tests for IDOR, cross-user access, role escalation, CSRF, and session revocation.
 
 Exit gate:
+
 - Private API endpoints reject unauthenticated users.
 - Changing record IDs never grants access to another user's private data.
 - Admin routes are server-protected and audited.
@@ -90,14 +96,38 @@ reported zero vulnerabilities; and the Drizzle migration consistency check
 passed. The production web build was verified to use production JSX and omit
 the development inbox endpoint/UI.
 
-Phase 2 is **ready for owner review, not approved**. Production registration
-and account-email flows remain intentionally unavailable (`503`) until a real
-email provider is selected and configured. Do not begin Phase 3 without
-owner approval.
+Phase 2 is **complete and approved**. Production registration and account-email
+flows remain intentionally unavailable (`503`) until a real email provider is
+selected and configured.
 
-## Phase 3 — Design system and ReactBits selection
+## Phase 3 — Marketplace foundation
+
+### Milestone 1 — Provider onboarding and admin approval
 
 Tasks:
+
+1. Add provider applications with verified-customer ownership, controlled provider types, bounded application details, one pending application per user, and resubmission after rejection.
+2. Add admin-only bounded application list/detail and explicit approve/reject actions with reviewer attribution and audit records.
+3. Approve transactionally: promote the user, rotate the authorization version, invalidate existing sessions, create a uniquely-slugged draft professional profile, copy provider types, and record the review audit event.
+4. Add owner-only professional profile read/update endpoints with explicit editable fields. Keep profile slugs server-generated and profiles private drafts.
+5. Add customer application, admin review, and professional profile screens using the existing React and API patterns.
+6. Add real-PostgreSQL migration, transaction, concurrency, ownership, authorization, and frontend tests. Do not add listings, public discovery, or publication.
+
+Implementation status: implemented; local verification and owner review pending.
+
+Exit gate:
+
+- Verified active customers can apply and view only their own status; pending duplicates are rejected and rejected applications can be resubmitted.
+- Admin-only review is atomic, audited, concurrency-safe, and cannot be performed by ordinary users.
+- Approval creates a professional role and private draft profile while revoking prior sessions, including sessions racing with the role change.
+- Profile reads/updates derive ownership from the session and reject unsupported fields.
+- PostgreSQL migrations, authorization/integration tests, frontend workflow tests, checks, and CI pass.
+- No public publishing, discovery, listings, uploads, bookings, payments, or other later-phase features are implemented.
+
+## Phase 4 — Design system and ReactBits selection
+
+Tasks:
+
 1. Establish design tokens, typography, spacing, buttons, fields, cards, status labels, dialogs, toast/alert patterns, and responsive breakpoints.
 2. Browse https://reactbits.dev/ and select no more than a few components for the first version, such as a subtle landing hero effect or restrained background.
 3. For each selected ReactBits component, document source/license, dependencies, bundle impact, accessibility, reduced-motion behavior, and intended page.
@@ -106,13 +136,15 @@ Tasks:
 6. Keep the established Evently visual direction: cream/off-white, navy, coral/terracotta, teal, editorial serif heading, readable sans-serif body.
 
 Exit gate:
+
 - Mobile and desktop layouts are consistent.
 - Keyboard focus, reduced motion, contrast, and semantic controls work.
 - No visual dependency adds unnecessary cost or critical performance problems.
 
-## Phase 4 — Professional profiles and discovery
+## Phase 5 — Professional profiles, services, and discovery
 
 Tasks:
+
 1. Build professional profile, service categories, services/packages, indicative pricing or quote-only setting, service area, portfolio metadata, and public/private field rules.
 2. Add safe image upload using object storage; enforce content type, file size, dimensions, ownership, and deletion behavior.
 3. Build public profile pages with real database data.
@@ -121,14 +153,16 @@ Tasks:
 6. Add favorites if it fits the first release.
 
 Exit gate:
+
 - Search/filter tests verify actual backend behavior.
 - Public APIs omit private fields.
 - No fake rating, review count, availability, or verification data.
 - No production upload stored on ephemeral server disk.
 
-## Phase 5 — Event briefs and booking workflow
+## Phase 6 — Event briefs and booking workflow
 
 Tasks:
+
 1. Build customer event brief with event type, date/time/timezone, location, estimated guest count, budget range, requested services, and notes.
 2. Customer can request a booking from a professional.
 3. Professional can accept, decline, or propose a change using explicit actions.
@@ -139,15 +173,17 @@ Tasks:
 8. Ensure all screens use real API/database state.
 
 Exit gate:
+
 - Invalid transitions are rejected server-side.
 - Concurrent accept/cancel attempts cannot corrupt state.
 - Duplicate submissions are handled safely.
 - E2E tests cover customer request and professional response.
 - No payment-success UI or payment claim exists.
 
-## Phase 6 — Messaging, notifications, reviews, and reports
+## Phase 7 — Messaging, notifications, reviews, and reports
 
 Tasks:
+
 1. Implement persistent paginated messages and conversations.
 2. Check conversation membership on every read/write.
 3. Start with refresh/polling. Add WebSockets only when actual usage needs them.
@@ -158,14 +194,16 @@ Tasks:
 8. Do not implement attachments until secure upload and abuse handling exist.
 
 Exit gate:
+
 - Unauthorized conversation access is blocked.
 - Ineligible/duplicate reviews are rejected.
 - Email failure cannot undo a booking.
 - Reports are persisted and reviewable.
 
-## Phase 7 — Admin and trust operations
+## Phase 8 — Admin and trust operations
 
 Tasks:
+
 1. Build admin-only report queue, profile moderation, user suspension, and audited actions.
 2. Define whether professionals need approval before public listing.
 3. Add account deactivation/deletion and data retention workflow.
@@ -173,13 +211,15 @@ Tasks:
 5. Ensure administrative actions are attributable and never silently impersonate users.
 
 Exit gate:
+
 - Non-admin API calls fail even if sent manually.
 - Admin actions create audit entries.
 - Suspended/deactivated accounts behave consistently across UI and API.
 
-## Phase 8 — Production hardening and launch
+## Phase 9 — Production hardening and launch
 
 Tasks:
+
 1. Choose hosting/database/storage based on actual current pricing, region, backup, idle, and usage limits.
 2. Separate development, staging, and production credentials and data.
 3. Configure HTTPS, secure headers, exact CORS, CSRF, rate limits, upload limits, and safe errors.
@@ -190,6 +230,7 @@ Tasks:
 8. Write deployment, rollback, support, and incident-response steps.
 
 Exit gate:
+
 - Staging deployment is repeatable.
 - Restore from backup is verified.
 - Critical security and user-journey tests pass.
@@ -201,6 +242,7 @@ Exit gate:
 Deferred until the booking workflow is dependable.
 
 Tasks:
+
 1. Decide commission model, refund/cancellation rules, invoicing/tax handling, and merchant-of-record responsibilities.
 2. Verify current Razorpay requirements/fees and alternatives available in India.
 3. Use provider-hosted checkout/tokenized payment flow; never store raw card details.
@@ -209,6 +251,7 @@ Tasks:
 6. Test failed payment, duplicate webhook, refund, and reconciliation.
 
 Exit gate:
+
 - Server-verified provider events are authoritative.
 - Payment and booking states cannot contradict silently.
 - Reconciliation is testable and support procedures exist.

@@ -7,6 +7,7 @@ const SESSION_LIFETIME_MS = 8 * 60 * 60 * 1000;
 
 export interface AuthSession extends session.Session {
   userId?: string;
+  authVersion?: number;
   csrfToken?: string;
 }
 

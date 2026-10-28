@@ -6,6 +6,11 @@ import {
   type CurrentUser,
   type DevelopmentEmailMessage,
 } from "./auth-api.js";
+import {
+  AdminProviderApplicationsScreen,
+  ProfessionalProfileScreen,
+  ProviderApplicationScreen,
+} from "./ProviderScreens.js";
 
 type AuthPage =
   | "home"
@@ -13,7 +18,15 @@ type AuthPage =
   | "login"
   | "verify-email"
   | "forgot-password"
-  | "reset-password";
+  | "reset-password"
+  | "provider-application"
+  | "admin-provider-applications"
+  | "professional-profile";
+
+type AuthFlowPage = Extract<
+  AuthPage,
+  "register" | "login" | "verify-email" | "forgot-password" | "reset-password"
+>;
 
 function currentPage(): AuthPage {
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
@@ -28,6 +41,12 @@ function currentPage(): AuthPage {
       return "forgot-password";
     case "/reset-password":
       return "reset-password";
+    case "/provider/apply":
+      return "provider-application";
+    case "/admin/provider-applications":
+      return "admin-provider-applications";
+    case "/professional/profile":
+      return "professional-profile";
     default:
       return "home";
   }
@@ -93,6 +112,15 @@ export default function App() {
           {user ? (
             <>
               <span className="signed-in">{user.email}</span>
+              {user.role === "customer" && (
+                <a href="/provider/apply">Apply as a provider</a>
+              )}
+              {user.role === "professional" && (
+                <a href="/professional/profile">Professional profile</a>
+              )}
+              {user.role === "admin" && (
+                <a href="/admin/provider-applications">Review applications</a>
+              )}
               <button
                 className="button button-secondary button-small"
                 disabled={logoutLoading}
@@ -150,15 +178,27 @@ export default function App() {
           )}
         </div>
 
-        {page !== "home" && (
-          <AuthScreen
-            key={`${page}-${authScreenRevision}`}
-            onAuthenticated={setUser}
-            onEmailAction={() => setInboxRevision((revision) => revision + 1)}
-            page={page}
-            token={tokenFromUrl()}
-          />
+        {page === "provider-application" && (
+          <ProviderApplicationScreen user={user} />
         )}
+        {page === "admin-provider-applications" && (
+          <AdminProviderApplicationsScreen user={user} />
+        )}
+        {page === "professional-profile" && (
+          <ProfessionalProfileScreen user={user} />
+        )}
+        {page !== "home" &&
+          page !== "provider-application" &&
+          page !== "admin-provider-applications" &&
+          page !== "professional-profile" && (
+            <AuthScreen
+              key={`${page}-${authScreenRevision}`}
+              onAuthenticated={setUser}
+              onEmailAction={() => setInboxRevision((revision) => revision + 1)}
+              page={page}
+              token={tokenFromUrl()}
+            />
+          )}
       </section>
 
       {import.meta.env.DEV && <DevelopmentInbox revision={inboxRevision} />}
@@ -172,7 +212,7 @@ function AuthScreen({
   onAuthenticated,
   onEmailAction,
 }: {
-  page: Exclude<AuthPage, "home">;
+  page: AuthFlowPage;
   token: string;
   onAuthenticated: (user: CurrentUser) => void;
   onEmailAction: () => void;

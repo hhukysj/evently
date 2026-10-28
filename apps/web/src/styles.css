@@ -184,6 +184,187 @@ h1 {
   font: inherit;
 }
 
+.auth-card textarea,
+.auth-card select {
+  width: 100%;
+  min-height: 2.9rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid #aeb7b8;
+  border-radius: 0.45rem;
+  background: #fff;
+  color: #172a3a;
+  font: inherit;
+}
+
+.auth-card textarea {
+  resize: vertical;
+}
+
+.auth-card input[type="checkbox"] {
+  width: 1.1rem;
+  min-height: 1.1rem;
+  margin: 0;
+  accent-color: #713d33;
+}
+
+.marketplace-card {
+  align-self: start;
+}
+
+.marketplace-card-wide {
+  grid-column: 1 / -1;
+}
+
+.marketplace-form {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1.5rem;
+}
+
+.marketplace-form label,
+.review-actions label,
+.admin-filter label {
+  margin-top: 0.35rem;
+  color: #172a3a;
+  font-size: 0.94rem;
+  font-weight: 650;
+}
+
+.marketplace-form .button {
+  margin-top: 0.55rem;
+}
+
+.provider-type-fieldset {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0.7rem 0;
+  padding: 0.9rem;
+  border: 1px solid #ded8cb;
+  border-radius: 0.5rem;
+}
+
+.provider-type-fieldset legend {
+  padding: 0 0.25rem;
+  color: #172a3a;
+  font-size: 0.94rem;
+  font-weight: 650;
+}
+
+.provider-type-option {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0 !important;
+  cursor: pointer;
+  font-weight: 500 !important;
+}
+
+.profile-state {
+  display: inline-block;
+  padding: 0.4rem 0.65rem;
+  border-radius: 999px;
+  background: #e4eee8;
+  color: #214d3b;
+  font-size: 0.9rem;
+  font-weight: 650;
+}
+
+.admin-filter {
+  display: flex;
+  max-width: 18rem;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 1.2rem 0;
+}
+
+.admin-review-layout {
+  display: grid;
+  grid-template-columns: minmax(15rem, 0.85fr) minmax(0, 1.15fr);
+  gap: 1.5rem;
+  margin-top: 1rem;
+}
+
+.admin-review-layout h3 {
+  margin: 0 0 0.8rem;
+}
+
+.application-list {
+  display: grid;
+  gap: 0.65rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.application-list-item {
+  display: grid;
+  width: 100%;
+  gap: 0.3rem;
+  padding: 0.85rem;
+  border: 1px solid #ded8cb;
+  border-radius: 0.5rem;
+  background: #fff;
+  color: #172a3a;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.application-list-item[aria-current="true"] {
+  border-color: #713d33;
+  box-shadow: 0 0 0 1px #713d33;
+}
+
+.application-list-item span {
+  color: #53616b;
+  font-size: 0.88rem;
+  overflow-wrap: anywhere;
+}
+
+.application-detail {
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid #ded8cb;
+  border-radius: 0.65rem;
+  background: #fffefa;
+}
+
+.application-detail dl {
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.35fr) minmax(0, 1fr);
+  gap: 0.55rem 1rem;
+  overflow-wrap: anywhere;
+}
+
+.application-detail dt {
+  color: #53616b;
+  font-weight: 650;
+}
+
+.application-detail dd {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.review-actions {
+  display: grid;
+  gap: 0.65rem;
+  margin-top: 1.2rem;
+}
+
+.pagination-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+
+.pagination-controls span {
+  color: #53616b;
+  font-size: 0.9rem;
+}
+
 .password-control {
   position: relative;
 }
@@ -210,6 +391,8 @@ h1 {
 }
 
 .auth-card input:focus-visible,
+.auth-card textarea:focus-visible,
+.auth-card select:focus-visible,
 button:focus-visible,
 a:focus-visible {
   outline: 3px solid #b75c49;
@@ -367,6 +550,14 @@ a:focus-visible {
   .auth-layout {
     grid-template-columns: minmax(0, 1fr);
     gap: 1.75rem;
+  }
+
+  .marketplace-card-wide {
+    grid-column: auto;
+  }
+
+  .admin-review-layout {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .auth-intro h1 {

@@ -43,7 +43,7 @@ jobs:
       - run: npm run check
       - name: Check database migrations from an empty database
         run: npm run db:migrate --workspace @evently/api
-      - name: Run PostgreSQL authentication integration tests
+      - name: Run PostgreSQL integration tests
         run: npm run test:integration
       - name: Verify migrations are idempotently recorded
         run: npm run db:migrate --workspace @evently/api

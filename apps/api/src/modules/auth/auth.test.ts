@@ -56,6 +56,7 @@ class InMemoryUserRepository implements UserRepository {
       email,
       passwordHash,
       role: "customer",
+      authVersion: 0,
       status: "active",
       emailVerifiedAt: null,
       createdAt: new Date(),
@@ -122,6 +123,7 @@ class InMemoryUserRepository implements UserRepository {
     }
     token.consumed = true;
     user.passwordHash = passwordHash;
+    user.authVersion += 1;
     return true;
   }
 
@@ -140,6 +142,7 @@ class InMemoryUserRepository implements UserRepository {
       return "already_inactive";
     }
     target.status = "suspended";
+    target.authVersion += 1;
     this.audit.push({ actor: actorUserId, target: targetUserId });
     return "suspended";
   }

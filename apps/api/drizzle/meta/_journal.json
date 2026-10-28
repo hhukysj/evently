@@ -29,6 +29,27 @@
       "when": 1792485282051,
       "tag": "0003_slimy_junta",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792820548633,
+      "tag": "0004_giant_next_avengers",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792821166622,
+      "tag": "0005_icy_stone_men",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793006760577,
+      "tag": "0006_known_eternity",
+      "breakpoints": true
     }
   ]
 }

@@ -25,6 +25,10 @@ import {
   createCsrfMiddleware,
   createCsrfToken,
 } from "../../middleware/csrf.js";
+import {
+  requireAuthentication,
+  requireRole,
+} from "../../middleware/authorization.js";
 import { authSession } from "../../middleware/sessions.js";
 
 type RateLimitStoreFactory = (scope: string) => Store;
@@ -279,6 +283,7 @@ export function createAuthRouter(configuration: AuthRouteConfiguration) {
         await sessionOperation(authSession(request), "regenerate");
         const currentSession = authSession(request);
         currentSession.userId = user.id;
+        currentSession.authVersion = user.authVersion;
         currentSession.csrfToken = createCsrfToken();
         await sessionOperation(currentSession, "save");
         response.json({
@@ -360,7 +365,7 @@ export function createAdminRouter(configuration: AuthRouteConfiguration) {
   router.post(
     "/users/:userId/suspend",
     requireAuth,
-    requireAdministrator,
+    requireRole("admin"),
     createCsrfMiddleware(configuration.appOrigin),
     async (request, response, next) => {
       const parsed = userIdParamsSchema.safeParse(request.params);
@@ -393,57 +398,6 @@ export function createAdminRouter(configuration: AuthRouteConfiguration) {
     },
   );
   return router;
-}
-
-function requireAdministrator(
-  _request: Request,
-  response: Response,
-  next: NextFunction,
-) {
-  if (response.locals.authUser.role !== "admin") {
-    sendError(response, 403, "FORBIDDEN", "Administrator access is required");
-    return;
-  }
-  next();
-}
-
-function requireAuthentication(
-  service: AuthService,
-  cookieName: string,
-  secureCookies: boolean,
-) {
-  return async (request: Request, response: Response, next: NextFunction) => {
-    const currentSession = authSession(request);
-    const userId = currentSession.userId;
-    if (!userId) {
-      sendError(response, 401, "UNAUTHENTICATED", "Authentication is required");
-      return;
-    }
-
-    try {
-      const user = await service.findActiveUser(userId);
-      if (!user) {
-        await sessionOperation(currentSession, "destroy");
-        response.clearCookie(cookieName, {
-          httpOnly: true,
-          secure: secureCookies,
-          sameSite: "lax",
-          path: "/",
-        });
-        sendError(
-          response,
-          401,
-          "UNAUTHENTICATED",
-          "Authentication is required",
-        );
-        return;
-      }
-      response.locals.authUser = user;
-      next();
-    } catch (error) {
-      next(error);
-    }
-  };
 }
 
 export function corsForOrigin(appOrigin: string) {
