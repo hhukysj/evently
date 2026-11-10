@@ -44,6 +44,7 @@ export class ProviderApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    readonly code?: string,
   ) {
     super(message);
     this.name = "ProviderApiError";
@@ -81,15 +82,75 @@ function apiError(status: number, payload: unknown): ProviderApiError {
     "error" in payload &&
     typeof payload.error === "object" &&
     payload.error !== null &&
-    "message" in payload.error &&
-    typeof payload.error.message === "string"
+    "message" in payload.error
   ) {
-    return new ProviderApiError(payload.error.message, status);
+    const error = payload.error;
+    return new ProviderApiError(
+      typeof error.message === "string"
+        ? error.message
+        : "The request could not be completed. Please try again.",
+      status,
+      "code" in error && typeof error.code === "string"
+        ? error.code
+        : undefined,
+    );
   }
   return new ProviderApiError(
     "The request could not be completed. Please try again.",
     status,
   );
+}
+
+export interface ProviderListingResponse<T> {
+  data: T;
+  etag: string | null;
+}
+
+export async function providerListingGet<T>(
+  path: string,
+): Promise<ProviderListingResponse<T>> {
+  const response = await fetch(path, { credentials: "same-origin" });
+  const payload = await readResponse(response);
+  if (!response.ok) {
+    throw apiError(response.status, payload);
+  }
+  return {
+    data: responseData<T>(payload),
+    etag: response.headers.get("ETag"),
+  };
+}
+
+export async function providerListingMutation<T>(
+  method: "POST" | "PATCH",
+  path: string,
+  body: Record<string, unknown>,
+  options: { etag?: string; confirmPublishedEdit?: boolean } = {},
+): Promise<ProviderListingResponse<T>> {
+  const token = await csrfToken();
+  const headers = new Headers({
+    "Content-Type": "application/json",
+    "X-CSRF-Token": token,
+  });
+  if (options.etag) {
+    headers.set("If-Match", options.etag);
+  }
+  if (options.confirmPublishedEdit) {
+    headers.set("X-Confirm-Published-Edit", "true");
+  }
+  const response = await fetch(path, {
+    method,
+    credentials: "same-origin",
+    headers,
+    body: JSON.stringify(body),
+  });
+  const payload = await readResponse(response);
+  if (!response.ok) {
+    throw apiError(response.status, payload);
+  }
+  return {
+    data: responseData<T>(payload),
+    etag: response.headers.get("ETag"),
+  };
 }
 
 export async function providerGet<T>(path: string): Promise<T> {

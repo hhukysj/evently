@@ -8,6 +8,8 @@ node_modules/
 dist/
 coverage/
 *.tsbuildinfo
+playwright-report/
+test-results/
 
 # Logs and local databases
 *.log

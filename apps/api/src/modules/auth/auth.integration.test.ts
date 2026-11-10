@@ -19,8 +19,13 @@ import {
 } from "./email-delivery.js";
 import { PostgresUserRepository } from "./repository.js";
 import { PasswordAuthService, hashToken } from "./service.js";
+import { verifyIntegrationDatabase } from "../../testing/integration-database.js";
 
 const fixturePrefix = `auth-it-${randomUUID()}`;
+const integrationDatabaseUrl = process.env.EVENTLY_INTEGRATION_DATABASE_URL;
+if (!integrationDatabaseUrl) {
+  throw new Error("EVENTLY_INTEGRATION_DATABASE_URL is required.");
+}
 const fixtureEmails = {
   customer: `${fixturePrefix}-customer@example.test`,
   target: `${fixturePrefix}-target@example.test`,
@@ -30,6 +35,7 @@ const fixtureEmails = {
 };
 const trackedSessionIds = new Set<string>();
 const rateLimitStores: PostgresRateLimitStore[] = [];
+let safeDatabaseConfirmed = false;
 const sessionStore = createPostgresSessionStore(pool);
 
 const emailProvider = new DevelopmentEmailDelivery("development");
@@ -185,37 +191,47 @@ async function destroySession(id: string): Promise<void> {
 }
 
 beforeAll(async () => {
-  await pool.query("SELECT 1");
+  await verifyIntegrationDatabase(
+    integrationDatabaseUrl,
+    pool,
+    process.env,
+    env.DATABASE_URL,
+  );
+  safeDatabaseConfirmed = true;
 });
 
 afterAll(async () => {
-  for (const id of trackedSessionIds) {
-    await destroySession(id);
-  }
-  const fixtureUsers = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(like(users.email, `${fixturePrefix}%`));
-  const fixtureUserIds = fixtureUsers.map(({ id }) => id);
-  if (fixtureUserIds.length > 0) {
-    await db
-      .delete(adminAuditLogs)
-      .where(
-        or(
-          inArray(adminAuditLogs.actorUserId, fixtureUserIds),
-          inArray(adminAuditLogs.targetUserId, fixtureUserIds),
-        ),
+  if (safeDatabaseConfirmed) {
+    for (const id of trackedSessionIds) {
+      await destroySession(id);
+    }
+    const fixtureUsers = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(like(users.email, `${fixturePrefix}%`));
+    const fixtureUserIds = fixtureUsers.map(({ id }) => id);
+    if (fixtureUserIds.length > 0) {
+      await db
+        .delete(adminAuditLogs)
+        .where(
+          or(
+            inArray(adminAuditLogs.actorUserId, fixtureUserIds),
+            inArray(adminAuditLogs.targetUserId, fixtureUserIds),
+          ),
+        );
+      await db.delete(sessions).where(
+        sql`${sessions.sess}->>'userId' IN (${sql.join(
+          fixtureUserIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})`,
       );
-    await db.delete(sessions).where(
-      sql`${sessions.sess}->>'userId' IN (${sql.join(
-        fixtureUserIds.map((id) => sql`${id}`),
-        sql`, `,
-      )})`,
-    );
-    await db.delete(users).where(inArray(users.id, fixtureUserIds));
+      await db.delete(users).where(inArray(users.id, fixtureUserIds));
+    }
+    for (const store of rateLimitStores) {
+      await store.clear();
+    }
   }
   for (const store of rateLimitStores) {
-    await store.clear();
     await store.shutdown();
   }
   sessionStore.close();

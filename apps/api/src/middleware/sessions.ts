@@ -29,13 +29,16 @@ export function sessionCookieName(secureCookies: boolean): string {
   return secureCookies ? "__Host-evently.sid" : "evently.sid";
 }
 
-export function createPostgresSessionStore(pool: Pool): PostgresSessionStore {
+export function createPostgresSessionStore(
+  pool: Pool,
+  pruneSessionInterval: false | number = 15,
+): PostgresSessionStore {
   const PostgresStore = connectPgSimple(session);
   return new PostgresStore({
     pool,
     tableName: "sessions",
     createTableIfMissing: false,
-    pruneSessionInterval: 15,
+    pruneSessionInterval,
   });
 }
 

@@ -7,22 +7,32 @@ interface CounterRow {
   reset_at: Date;
 }
 
+export interface PostgresRateLimitStoreOptions {
+  pruneExpired?: boolean;
+}
+
 export class PostgresRateLimitStore implements Store {
   localKeys = false;
   private windowMs?: number;
   private cleanupTimer?: NodeJS.Timeout;
   private readonly knownKeyHashes = new Set<string>();
+  private readonly pruneExpiredOnSchedule: boolean;
 
   constructor(
     private readonly pool: Pool,
     private readonly scope: string,
     windowMs?: number,
+    options: PostgresRateLimitStoreOptions = {},
   ) {
     this.windowMs = windowMs;
+    this.pruneExpiredOnSchedule = options.pruneExpired ?? true;
   }
 
   init(options: Options): void {
     this.windowMs = options.windowMs;
+    if (!this.pruneExpiredOnSchedule) {
+      return;
+    }
     this.cleanupTimer = setInterval(
       () => {
         void this.pruneExpired().catch((error: unknown) => {

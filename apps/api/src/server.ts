@@ -10,12 +10,18 @@ import { PostgresUserRepository } from "./modules/auth/repository.js";
 import { PasswordAuthService } from "./modules/auth/service.js";
 import { PostgresProviderRepository } from "./modules/providers/repository.js";
 import { MarketplaceProviderService } from "./modules/providers/service.js";
+import { PostgresServiceListingRepository } from "./modules/service-listings/repository.js";
+import { ServiceListingService } from "./modules/service-listings/service.js";
 import {
   createPostgresSessionStore,
   sessionCookieName,
 } from "./middleware/sessions.js";
 
 const secureCookies = env.NODE_ENV === "production";
+const testRateLimitNamespace =
+  env.NODE_ENV === "development"
+    ? env.EVENTLY_TEST_RATE_LIMIT_NAMESPACE
+    : undefined;
 const sessionStore = createPostgresSessionStore(pool);
 const developmentEmailDelivery =
   env.NODE_ENV === "development"
@@ -33,13 +39,20 @@ const app = createApp(pool, {
   providerService: new MarketplaceProviderService(
     new PostgresProviderRepository(db),
   ),
+  serviceListingService: new ServiceListingService(
+    new PostgresServiceListingRepository(db),
+  ),
   sessionStore,
   sessionSecret: env.SESSION_SECRET,
   appOrigin: env.APP_ORIGIN,
   secureCookies,
   cookieName: sessionCookieName(secureCookies),
   trustProxyHops: env.TRUST_PROXY_HOPS,
-  rateLimitStoreFactory: (scope) => new PostgresRateLimitStore(pool, scope),
+  rateLimitStoreFactory: (scope) =>
+    new PostgresRateLimitStore(
+      pool,
+      testRateLimitNamespace ? `${testRateLimitNamespace}:${scope}` : scope,
+    ),
 });
 const server = app.listen(env.PORT, "127.0.0.1", () => {
   console.info(`Evently API listening on port ${env.PORT}`);

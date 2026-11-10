@@ -37,6 +37,7 @@ const environmentSchema = z.object({
     (value) => (value === "" || value === undefined ? 0 : Number(value)),
     z.number().int().min(0).max(5),
   ),
+  EVENTLY_TEST_RATE_LIMIT_NAMESPACE: z.string().uuid().optional(),
   NODE_ENV: z.preprocess(
     (value) => (value === "" || value === undefined ? "development" : value),
     z.enum(["development", "test", "production"]),

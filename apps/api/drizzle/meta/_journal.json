@@ -50,6 +50,20 @@
       "when": 1793006760577,
       "tag": "0006_known_eternity",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793617618589,
+      "tag": "0007_dusty_falcon",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793624473237,
+      "tag": "0008_heavy_the_spike",
+      "breakpoints": true
     }
   ]
 }

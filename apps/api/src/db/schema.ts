@@ -35,6 +35,8 @@ export const adminActionEnum = pgEnum("admin_action", [
   "suspend_user",
   "approve_provider_application",
   "reject_provider_application",
+  "hide_service_listing",
+  "restore_service_listing",
 ]);
 
 export const providerTypeEnum = pgEnum("provider_type", [
@@ -52,6 +54,21 @@ export const providerApplicationStatusEnum = pgEnum(
 export const professionalProfileStatusEnum = pgEnum(
   "professional_profile_status",
   ["draft"],
+);
+
+export const serviceListingPricingMethodEnum = pgEnum(
+  "service_listing_pricing_method",
+  ["fixed", "starting_at", "quote_only"],
+);
+
+export const serviceListingPublicationStatusEnum = pgEnum(
+  "service_listing_publication_status",
+  ["draft", "published"],
+);
+
+export const serviceListingModerationStatusEnum = pgEnum(
+  "service_listing_moderation_status",
+  ["visible", "hidden"],
 );
 
 export const users = pgTable(
@@ -230,6 +247,133 @@ export const professionalProfileTypes = pgTable(
   ],
 );
 
+export const serviceCategories = pgTable(
+  "service_categories",
+  {
+    slug: varchar("slug", { length: 64 }).primaryKey(),
+    name: varchar("name", { length: 100 }).notNull(),
+    sortOrder: integer("sort_order").notNull(),
+  },
+  (table) => [
+    uniqueIndex("service_categories_name_unique").on(table.name),
+    uniqueIndex("service_categories_sort_order_unique").on(table.sortOrder),
+    check(
+      "service_categories_sort_order_positive",
+      sql`${table.sortOrder} > 0`,
+    ),
+    check(
+      "service_categories_name_nonblank",
+      sql`char_length(btrim(${table.name})) BETWEEN 2 AND 100 AND ${table.name} ~ '[^[:space:]]'`,
+    ),
+  ],
+);
+
+export const serviceListings = pgTable(
+  "service_listings",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    professionalProfileId: uuid("professional_profile_id")
+      .notNull()
+      .references(() => professionalProfiles.id, { onDelete: "cascade" }),
+    categorySlug: varchar("category_slug", { length: 64 })
+      .notNull()
+      .references(() => serviceCategories.slug, { onDelete: "restrict" }),
+    title: varchar("title", { length: 120 }).notNull(),
+    description: varchar("description", { length: 1200 }).notNull(),
+    city: varchar("city", { length: 120 }).notNull(),
+    region: varchar("region", { length: 120 }),
+    pricingMethod: serviceListingPricingMethodEnum("pricing_method").notNull(),
+    priceAmountPaise: integer("price_amount_paise"),
+    currency: varchar("currency", { length: 3 }).notNull().default("INR"),
+    publicationStatus: serviceListingPublicationStatusEnum("publication_status")
+      .notNull()
+      .default("draft"),
+    moderationStatus: serviceListingModerationStatusEnum("moderation_status")
+      .notNull()
+      .default("visible"),
+    moderationHiddenByUserId: uuid("moderation_hidden_by_user_id").references(
+      () => users.id,
+      { onDelete: "restrict" },
+    ),
+    moderationHiddenAt: timestamp("moderation_hidden_at", {
+      withTimezone: true,
+    }),
+    moderationReason: varchar("moderation_reason", { length: 500 }),
+    version: integer("version").notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("service_listings_owner_created_idx").on(
+      table.professionalProfileId,
+      table.createdAt,
+      table.id,
+    ),
+    index("service_listings_public_created_idx")
+      .on(table.createdAt, table.id)
+      .where(
+        sql`${table.publicationStatus} = 'published' AND ${table.moderationStatus} = 'visible'`,
+      ),
+    index("service_listings_category_visibility_created_idx").on(
+      table.categorySlug,
+      table.publicationStatus,
+      table.moderationStatus,
+      table.createdAt,
+      table.id,
+    ),
+    index("service_listings_city_visibility_created_idx").on(
+      table.city,
+      table.publicationStatus,
+      table.moderationStatus,
+      table.createdAt,
+      table.id,
+    ),
+    index("service_listings_region_visibility_created_idx").on(
+      table.region,
+      table.publicationStatus,
+      table.moderationStatus,
+      table.createdAt,
+      table.id,
+    ),
+    check(
+      "service_listings_title_nonblank",
+      sql`char_length(btrim(${table.title})) BETWEEN 2 AND 120 AND ${table.title} ~ '[^[:space:]]'`,
+    ),
+    check(
+      "service_listings_description_nonblank",
+      sql`char_length(btrim(${table.description})) BETWEEN 20 AND 1200 AND ${table.description} ~ '[^[:space:]]'`,
+    ),
+    check(
+      "service_listings_city_nonblank",
+      sql`char_length(btrim(${table.city})) BETWEEN 2 AND 120 AND ${table.city} ~ '[^[:space:]]'`,
+    ),
+    check(
+      "service_listings_region_nonblank",
+      sql`${table.region} IS NULL OR (char_length(btrim(${table.region})) BETWEEN 2 AND 120 AND ${table.region} ~ '[^[:space:]]')`,
+    ),
+    check(
+      "service_listings_moderation_metadata_consistent",
+      sql`(
+        (${table.moderationStatus} = 'visible' AND ${table.moderationHiddenByUserId} IS NULL AND ${table.moderationHiddenAt} IS NULL AND ${table.moderationReason} IS NULL)
+        OR (${table.moderationStatus} = 'hidden' AND ${table.moderationHiddenByUserId} IS NOT NULL AND ${table.moderationHiddenAt} IS NOT NULL AND ${table.moderationReason} IS NOT NULL AND char_length(btrim(${table.moderationReason})) BETWEEN 8 AND 500 AND ${table.moderationReason} ~ '[^[:space:]]')
+      )`,
+    ),
+    check(
+      "service_listings_price_consistent",
+      sql`(
+        (${table.pricingMethod} = 'quote_only' AND ${table.priceAmountPaise} IS NULL)
+        OR (${table.pricingMethod} IN ('fixed', 'starting_at') AND ${table.priceAmountPaise} IS NOT NULL AND ${table.priceAmountPaise} >= 0)
+      )`,
+    ),
+    check("service_listings_currency_inr", sql`${table.currency} = 'INR'`),
+    check("service_listings_version_positive", sql`${table.version} > 0`),
+  ],
+);
+
 export const adminAuditLogs = pgTable(
   "admin_audit_logs",
   {
@@ -244,6 +388,12 @@ export const adminAuditLogs = pgTable(
       () => providerApplications.id,
       { onDelete: "set null" },
     ),
+    serviceListingId: uuid("service_listing_id").references(
+      () => serviceListings.id,
+      { onDelete: "restrict" },
+    ),
+    actorUserIdSnapshot: uuid("actor_user_id_snapshot"),
+    serviceListingReason: varchar("service_listing_reason", { length: 500 }),
     action: adminActionEnum("action").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -261,6 +411,24 @@ export const adminAuditLogs = pgTable(
     index("admin_audit_logs_application_created_idx").on(
       table.providerApplicationId,
       table.createdAt,
+    ),
+    index("admin_audit_logs_listing_created_idx").on(
+      table.serviceListingId,
+      table.createdAt,
+    ),
+    check(
+      "admin_audit_logs_service_listing_identity_check",
+      sql`(
+        ${table.action} NOT IN ('hide_service_listing', 'restore_service_listing')
+        OR (${table.serviceListingId} IS NOT NULL AND ${table.actorUserIdSnapshot} IS NOT NULL AND (${table.actorUserId} IS NULL OR ${table.actorUserId} = ${table.actorUserIdSnapshot}))
+      )`,
+    ),
+    check(
+      "admin_audit_logs_service_listing_reason_check",
+      sql`(
+        ${table.action} <> 'hide_service_listing'
+        OR (${table.serviceListingReason} IS NOT NULL AND char_length(btrim(${table.serviceListingReason})) BETWEEN 8 AND 500 AND ${table.serviceListingReason} ~ '[^[:space:]]')
+      )`,
     ),
   ],
 );

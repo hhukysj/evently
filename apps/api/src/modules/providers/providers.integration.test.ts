@@ -24,10 +24,16 @@ import { PostgresUserRepository } from "../auth/repository.js";
 import { PasswordAuthService, hashToken } from "../auth/service.js";
 import { PostgresProviderRepository } from "./repository.js";
 import { MarketplaceProviderService } from "./service.js";
+import { verifyIntegrationDatabase } from "../../testing/integration-database.js";
 
 const fixturePrefix = `provider-it-${randomUUID()}`;
+const integrationDatabaseUrl = process.env.EVENTLY_INTEGRATION_DATABASE_URL;
+if (!integrationDatabaseUrl) {
+  throw new Error("EVENTLY_INTEGRATION_DATABASE_URL is required.");
+}
 const trackedSessionIds = new Set<string>();
 const rateLimitStores: PostgresRateLimitStore[] = [];
+let safeDatabaseConfirmed = false;
 const sessionStore = createPostgresSessionStore(pool);
 const emailProvider = new DevelopmentEmailDelivery("development");
 const app = createApp(pool, {
@@ -199,50 +205,60 @@ async function makeCollisionSlug(userId: string): Promise<string> {
 }
 
 beforeAll(async () => {
-  await pool.query("SELECT 1");
+  await verifyIntegrationDatabase(
+    integrationDatabaseUrl,
+    pool,
+    process.env,
+    env.DATABASE_URL,
+  );
+  safeDatabaseConfirmed = true;
 });
 
 afterAll(async () => {
-  const fixtureUsers = await db
-    .select({ id: users.id })
-    .from(users)
-    .where(like(users.email, `${fixturePrefix}%`));
-  const fixtureUserIds = fixtureUsers.map(({ id }) => id);
-  if (fixtureUserIds.length > 0) {
-    await db
-      .delete(adminAuditLogs)
-      .where(
-        or(
-          inArray(adminAuditLogs.actorUserId, fixtureUserIds),
-          inArray(adminAuditLogs.targetUserId, fixtureUserIds),
-        ),
+  if (safeDatabaseConfirmed) {
+    const fixtureUsers = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(like(users.email, `${fixturePrefix}%`));
+    const fixtureUserIds = fixtureUsers.map(({ id }) => id);
+    if (fixtureUserIds.length > 0) {
+      await db
+        .delete(adminAuditLogs)
+        .where(
+          or(
+            inArray(adminAuditLogs.actorUserId, fixtureUserIds),
+            inArray(adminAuditLogs.targetUserId, fixtureUserIds),
+          ),
+        );
+      await db.delete(sessions).where(
+        sql`${sessions.sess}->>'userId' IN (${sql.join(
+          fixtureUserIds.map((id) => sql`${id}`),
+          sql`, `,
+        )})`,
       );
-    await db.delete(sessions).where(
-      sql`${sessions.sess}->>'userId' IN (${sql.join(
-        fixtureUserIds.map((id) => sql`${id}`),
-        sql`, `,
-      )})`,
-    );
-    await db
-      .delete(providerApplications)
-      .where(
-        or(
-          inArray(providerApplications.userId, fixtureUserIds),
-          inArray(providerApplications.reviewerUserId, fixtureUserIds),
-        ),
-      );
-    await db.delete(users).where(inArray(users.id, fixtureUserIds));
-  }
-  for (const id of trackedSessionIds) {
-    await new Promise<void>((resolve, reject) => {
-      sessionStore.destroy(id, (error) => {
-        if (error) reject(error);
-        else resolve();
+      await db
+        .delete(providerApplications)
+        .where(
+          or(
+            inArray(providerApplications.userId, fixtureUserIds),
+            inArray(providerApplications.reviewerUserId, fixtureUserIds),
+          ),
+        );
+      await db.delete(users).where(inArray(users.id, fixtureUserIds));
+    }
+    for (const id of trackedSessionIds) {
+      await new Promise<void>((resolve, reject) => {
+        sessionStore.destroy(id, (error) => {
+          if (error) reject(error);
+          else resolve();
+        });
       });
-    });
+    }
+    for (const store of rateLimitStores) {
+      await store.clear();
+    }
   }
   for (const store of rateLimitStores) {
-    await store.clear();
     await store.shutdown();
   }
   sessionStore.close();
@@ -250,8 +266,10 @@ afterAll(async () => {
 });
 
 afterEach(async () => {
-  for (const store of rateLimitStores) {
-    await store.clear();
+  if (safeDatabaseConfirmed) {
+    for (const store of rateLimitStores) {
+      await store.clear();
+    }
   }
 });
 

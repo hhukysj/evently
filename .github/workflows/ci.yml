@@ -41,9 +41,21 @@ jobs:
       - run: npm ci
       - run: npm audit --omit=dev
       - run: npm run check
+      - name: Verify the isolated PostgreSQL test target
+        run: npm run db:verify-test-target --workspace @evently/api
+        env:
+          EVENTLY_INTEGRATION_DATABASE_URL: ${{ env.DATABASE_URL }}
       - name: Check database migrations from an empty database
         run: npm run db:migrate --workspace @evently/api
       - name: Run PostgreSQL integration tests
         run: npm run test:integration
+        env:
+          EVENTLY_INTEGRATION_DATABASE_URL: ${{ env.DATABASE_URL }}
+      - name: Install Chromium for browser tests
+        run: npx playwright install --with-deps chromium
+      - name: Run automated browser tests
+        run: npm run test:e2e
+        env:
+          EVENTLY_E2E_DATABASE_URL: ${{ env.DATABASE_URL }}
       - name: Verify migrations are idempotently recorded
         run: npm run db:migrate --workspace @evently/api

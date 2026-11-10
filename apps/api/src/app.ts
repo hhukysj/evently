@@ -21,6 +21,12 @@ import {
   createProviderApplicationRouter,
 } from "./modules/providers/routes.js";
 import type { ProviderService } from "./modules/providers/service.js";
+import {
+  createAdminServiceListingRouter,
+  createProviderServiceListingRouter,
+  createPublicServiceListingRouter,
+} from "./modules/service-listings/routes.js";
+import type { ServiceListingService } from "./modules/service-listings/service.js";
 
 export interface DatabaseProbe {
   query: (query: "SELECT 1") => Promise<unknown>;
@@ -29,6 +35,7 @@ export interface DatabaseProbe {
 export interface AuthAppConfiguration {
   service: AuthService;
   providerService?: ProviderService;
+  serviceListingService?: ServiceListingService;
   environment: "development" | "test" | "production";
   developmentEmailInbox?: DevelopmentEmailInbox;
   sessionStore: session.Store;
@@ -145,6 +152,28 @@ export function createApp(
         rateLimitStoreFactory: authConfiguration.rateLimitStoreFactory,
       }),
     );
+    if (authConfiguration.serviceListingService) {
+      const listingRouteConfiguration = {
+        authService: authConfiguration.service,
+        service: authConfiguration.serviceListingService,
+        appOrigin: authConfiguration.appOrigin,
+        cookieName: authConfiguration.cookieName,
+        secureCookies: authConfiguration.secureCookies,
+        rateLimitStoreFactory: authConfiguration.rateLimitStoreFactory,
+      };
+      authApi.use(
+        "/professional/service-listings",
+        createProviderServiceListingRouter(listingRouteConfiguration),
+      );
+      authApi.use(
+        "/admin/service-listings",
+        createAdminServiceListingRouter(listingRouteConfiguration),
+      );
+      authApi.use(
+        "/service-listings",
+        createPublicServiceListingRouter(listingRouteConfiguration),
+      );
+    }
     if (authConfiguration.providerService) {
       const providerRouteConfiguration = {
         authService: authConfiguration.service,

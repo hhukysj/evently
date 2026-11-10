@@ -1,4 +1,12 @@
 import { defineConfig } from "vitest/config";
+import {
+  assertIntegrationDatabaseTarget,
+  requireIntegrationDatabaseUrl,
+} from "./apps/api/src/testing/integration-database.js";
+
+const databaseUrl = requireIntegrationDatabaseUrl();
+assertIntegrationDatabaseTarget(databaseUrl);
+process.env.DATABASE_URL = databaseUrl;
 
 export default defineConfig({
   test: {

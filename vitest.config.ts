@@ -5,6 +5,7 @@ export default defineConfig({
     include: [
       "apps/**/*.test.{ts,tsx}",
       "packages/**/*.test.{ts,tsx}",
+      "e2e/**/*.test.ts",
     ],
     exclude: ["**/*.integration.test.{ts,tsx}"],
     environment: "node",

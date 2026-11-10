@@ -11,6 +11,8 @@ import {
   ProfessionalProfileScreen,
   ProviderApplicationScreen,
 } from "./ProviderScreens.js";
+import { ServiceListingsScreen } from "./ServiceListingsScreen.js";
+import { AdminServiceListingsScreen } from "./AdminServiceListingsScreen.js";
 
 type AuthPage =
   | "home"
@@ -21,7 +23,9 @@ type AuthPage =
   | "reset-password"
   | "provider-application"
   | "admin-provider-applications"
-  | "professional-profile";
+  | "professional-profile"
+  | "professional-services"
+  | "admin-service-listings";
 
 type AuthFlowPage = Extract<
   AuthPage,
@@ -47,6 +51,10 @@ function currentPage(): AuthPage {
       return "admin-provider-applications";
     case "/professional/profile":
       return "professional-profile";
+    case "/professional/services":
+      return "professional-services";
+    case "/admin/service-listings":
+      return "admin-service-listings";
     default:
       return "home";
   }
@@ -116,10 +124,16 @@ export default function App() {
                 <a href="/provider/apply">Apply as a provider</a>
               )}
               {user.role === "professional" && (
-                <a href="/professional/profile">Professional profile</a>
+                <>
+                  <a href="/professional/profile">Professional profile</a>
+                  <a href="/professional/services">Manage services</a>
+                </>
               )}
               {user.role === "admin" && (
-                <a href="/admin/provider-applications">Review applications</a>
+                <>
+                  <a href="/admin/provider-applications">Review applications</a>
+                  <a href="/admin/service-listings">Review service listings</a>
+                </>
               )}
               <button
                 className="button button-secondary button-small"
@@ -187,10 +201,18 @@ export default function App() {
         {page === "professional-profile" && (
           <ProfessionalProfileScreen user={user} />
         )}
+        {page === "professional-services" && (
+          <ServiceListingsScreen user={user} />
+        )}
+        {page === "admin-service-listings" && (
+          <AdminServiceListingsScreen user={user} />
+        )}
         {page !== "home" &&
           page !== "provider-application" &&
           page !== "admin-provider-applications" &&
-          page !== "professional-profile" && (
+          page !== "professional-profile" &&
+          page !== "professional-services" &&
+          page !== "admin-service-listings" && (
             <AuthScreen
               key={`${page}-${authScreenRevision}`}
               onAuthenticated={setUser}

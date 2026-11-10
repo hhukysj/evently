@@ -111,18 +111,39 @@ Tasks:
 3. Approve transactionally: promote the user, rotate the authorization version, invalidate existing sessions, create a uniquely-slugged draft professional profile, copy provider types, and record the review audit event.
 4. Add owner-only professional profile read/update endpoints with explicit editable fields. Keep profile slugs server-generated and profiles private drafts.
 5. Add customer application, admin review, and professional profile screens using the existing React and API patterns.
-6. Add real-PostgreSQL migration, transaction, concurrency, ownership, authorization, and frontend tests. Do not add listings, public discovery, or publication.
+6. Add real-PostgreSQL migration, transaction, concurrency, ownership, authorization, and frontend tests. The original Milestone 1 scope excluded listings, public discovery, and publication; service-listing work was subsequently delivered as a separate milestone ahead of its planned Phase 5 work.
 
-Implementation status: implemented; local verification and owner review pending.
+Implementation status: implemented; local verification complete; owner review pending.
 
-Exit gate:
+Historical Milestone 1 exit gate:
 
 - Verified active customers can apply and view only their own status; pending duplicates are rejected and rejected applications can be resubmitted.
 - Admin-only review is atomic, audited, concurrency-safe, and cannot be performed by ordinary users.
 - Approval creates a professional role and private draft profile while revoking prior sessions, including sessions racing with the role change.
 - Profile reads/updates derive ownership from the session and reject unsupported fields.
 - PostgreSQL migrations, authorization/integration tests, frontend workflow tests, checks, and CI pass.
-- No public publishing, discovery, listings, uploads, bookings, payments, or other later-phase features are implemented.
+- At the time Milestone 1 was completed, it did not include public publishing, discovery, listings, uploads, bookings, payments, or other later-phase features. See the early-delivery note below for the current service-listing scope.
+
+### Milestone 2 — Provider service listings (delivered ahead of Phase 5)
+
+Implementation status: the migrations, shared contracts, listing APIs, provider and admin management UI, and verified local integration workflow are present in the worktree. CI and owner review remain pending.
+
+Implemented scope:
+
+- Versioned service-listing and category schema, seeded categories, moderation audit support, and migrations.
+- Owner-scoped provider listing management, bounded pagination, create/edit, publish/unpublish, and ETag-based concurrency checks.
+- An admin-only, bounded listing queue with publication/moderation/category/city filters, detail review, and hide/restore actions using the existing audited transactions.
+- Owner-only moderation reasons for hidden listings; public listing projections continue to omit moderation data.
+- Public listing search/detail APIs with visibility and privacy filtering.
+- Provider-facing dashboard and forms for managing listings, including visible feedback when moderation hides a listing.
+
+Pending or unstarted scope:
+
+- Customer-facing public discovery and listing-detail UI is not implemented.
+- Admin queue actions are implemented, but a full audit-history screen and moderation workflows for profile/portfolio content are not.
+- The broader Phase 5 professional profile, portfolio, and upload work remains pending. Search capabilities beyond the filters implemented by the current API remain pending.
+- Favorites remain optional and unstarted.
+- Booking workflows, payments, and production readiness are not completed by this milestone.
 
 ## Phase 4 — Design system and ReactBits selection
 
@@ -143,14 +164,19 @@ Exit gate:
 
 ## Phase 5 — Professional profiles, services, and discovery
 
+The service-listing foundation and provider management UI described under
+Phase 3 Milestone 2 were delivered ahead of this phase. The following work
+remains in Phase 5; their presence does not mean the milestone or its exit gate
+is complete.
+
 Tasks:
 
-1. Build professional profile, service categories, services/packages, indicative pricing or quote-only setting, service area, portfolio metadata, and public/private field rules.
+1. Extend professional profile and service presentation with the remaining profile, service-area, portfolio metadata, and public/private field rules.
 2. Add safe image upload using object storage; enforce content type, file size, dimensions, ownership, and deletion behavior.
-3. Build public profile pages with real database data.
-4. Implement backend search, category filters, price range, service area, sort, and bounded pagination only for fields actually supported.
-5. Start with PostgreSQL queries/full-text search. Avoid paid search APIs and external map APIs until validated need.
-6. Add favorites if it fits the first release.
+3. Build customer-facing public profile, discovery, and listing-detail pages with real database data.
+4. Extend backend search as needed for keyword, price range, service area, and sorting; retain bounded pagination and only expose filters actually implemented.
+5. Continue using PostgreSQL queries/full-text search. Avoid paid search APIs and external map APIs until validated need.
+6. Decide whether favorites fit the first release; this remains optional and unstarted.
 
 Exit gate:
 
