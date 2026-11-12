@@ -4,10 +4,13 @@ import {
   fireEvent,
   render,
   screen,
+  within,
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App.js";
+
+const originalViewportWidth = window.innerWidth;
 
 const authenticatedUser = {
   id: "7d984179-9852-45ca-bacb-33a1e21e051c",
@@ -45,7 +48,135 @@ function setPath(path: string): void {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  Object.defineProperty(window, "innerWidth", {
+    configurable: true,
+    value: originalViewportWidth,
+  });
   setPath("/");
+});
+
+describe("public service routes", () => {
+  it("keeps discovery and signed-in provider navigation available at narrow widths", async () => {
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 320,
+    });
+    mockFetch({
+      "/api/v1/auth/me": () =>
+        jsonResponse({
+          data: {
+            user: {
+              ...authenticatedUser,
+              role: "professional",
+              email: "a-very-long-account-address@example.com",
+            },
+          },
+        }),
+      "/api/v1/dev/email-inbox": () => jsonResponse({ data: { messages: [] } }),
+    });
+    setPath("/");
+
+    render(<App />);
+
+    const navigation = screen.getByRole("navigation", {
+      name: "Account navigation",
+    });
+    expect(
+      await screen.findByRole("link", { name: "Professional profile" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("a-very-long-account-address@example.com"),
+    ).toBeTruthy();
+    expect(
+      within(navigation)
+        .getByRole("link", { name: "Discover services" })
+        .getAttribute("href"),
+    ).toBe("/services");
+    expect(
+      screen.getByRole("link", { name: "Professional profile" }).closest("nav"),
+    ).toBe(navigation);
+    expect(
+      screen.getByRole("link", { name: "Manage services" }).closest("nav"),
+    ).toBe(navigation);
+    expect(screen.getByRole("button", { name: "Sign out" })).toBeTruthy();
+  });
+
+  it("links to public discovery and renders a directly opened discovery route", async () => {
+    mockFetch({
+      "/api/v1/auth/me": () =>
+        jsonResponse({ error: { message: "Sign in" } }, 401),
+      "/api/v1/dev/email-inbox": () => jsonResponse({ data: { messages: [] } }),
+      "/api/v1/service-listings": () =>
+        jsonResponse({
+          data: {
+            listings: [],
+            pagination: { page: 1, pageSize: 25, total: 0 },
+          },
+        }),
+    });
+    setPath("/");
+    const { unmount } = render(<App />);
+    expect(
+      screen
+        .getAllByRole("link", { name: "Discover services" })[0]
+        ?.getAttribute("href"),
+    ).toBe("/services");
+
+    unmount();
+    setPath("/services");
+    render(<App />);
+    expect(
+      await screen.findByRole("heading", { name: "Discover services" }),
+    ).toBeTruthy();
+    expect(
+      await screen.findByText("No service listings match these filters"),
+    ).toBeTruthy();
+  });
+
+  it("renders a direct service detail route using its public API", async () => {
+    const listingId = "a42a3df3-9a23-47e8-aad5-1770d0f037a1";
+    mockFetch({
+      "/api/v1/auth/me": () =>
+        jsonResponse({ error: { message: "Sign in" } }, 401),
+      "/api/v1/dev/email-inbox": () => jsonResponse({ data: { messages: [] } }),
+      [`/api/v1/service-listings/${listingId}`]: () =>
+        jsonResponse({
+          data: {
+            listing: {
+              id: listingId,
+              title: "Community event planning",
+              description: "Planning for local community celebrations.",
+              category: {
+                slug: "planning_coordination",
+                name: "Planning and coordination",
+              },
+              city: "Pune",
+              region: "Maharashtra",
+              pricingMethod: "quote_only",
+              priceAmountPaise: null,
+              currency: "INR",
+              provider: {
+                displayName: "Local Event Studio",
+                slug: "local-event-studio",
+                headline: null,
+              },
+            },
+          },
+        }),
+    });
+    setPath(`/services/${listingId}`);
+    render(<App />);
+
+    expect(
+      await screen.findByRole("heading", { name: "Community event planning" }),
+    ).toBeTruthy();
+    expect(screen.getByText("Request a quote")).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Back to service listings" })
+        .getAttribute("href"),
+    ).toBe("/services");
+  });
 });
 
 describe("authentication screens", () => {

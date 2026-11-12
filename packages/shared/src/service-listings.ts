@@ -184,3 +184,16 @@ export type ProviderServiceListingQuery = z.infer<
 export type AdminServiceListingQuery = z.infer<
   typeof adminServiceListingQuerySchema
 >;
+
+export interface PublicServiceListingDto {
+  id: string;
+  title: string;
+  description: string;
+  category: { slug: ServiceCategorySlug; name: string };
+  city: string;
+  region: string | null;
+  pricingMethod: ServiceListingPricingMethod;
+  priceAmountPaise: number | null;
+  currency: "INR";
+  provider: { displayName: string; slug: string; headline: string | null };
+}

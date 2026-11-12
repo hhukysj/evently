@@ -13,6 +13,8 @@ import {
 } from "./ProviderScreens.js";
 import { ServiceListingsScreen } from "./ServiceListingsScreen.js";
 import { AdminServiceListingsScreen } from "./AdminServiceListingsScreen.js";
+import { ServiceDiscoveryScreen } from "./ServiceDiscoveryScreen.js";
+import { ServiceDetailScreen } from "./ServiceDetailScreen.js";
 
 type AuthPage =
   | "home"
@@ -25,7 +27,9 @@ type AuthPage =
   | "admin-provider-applications"
   | "professional-profile"
   | "professional-services"
-  | "admin-service-listings";
+  | "admin-service-listings"
+  | "service-discovery"
+  | "service-detail";
 
 type AuthFlowPage = Extract<
   AuthPage,
@@ -34,6 +38,12 @@ type AuthFlowPage = Extract<
 
 function currentPage(): AuthPage {
   const path = window.location.pathname.replace(/\/+$/, "") || "/";
+  if (path === "/services") {
+    return "service-discovery";
+  }
+  if (path.startsWith("/services/")) {
+    return "service-detail";
+  }
   switch (path) {
     case "/register":
       return "register";
@@ -57,6 +67,16 @@ function currentPage(): AuthPage {
       return "admin-service-listings";
     default:
       return "home";
+  }
+}
+
+function currentServiceListingId(): string {
+  const path = window.location.pathname.replace(/\/+$/, "");
+  const encodedId = path.slice("/services/".length);
+  try {
+    return decodeURIComponent(encodedId);
+  } catch {
+    return encodedId;
   }
 }
 
@@ -117,6 +137,16 @@ export default function App() {
           Evently
         </a>
         <nav aria-label="Account navigation">
+          <a
+            href="/services"
+            aria-current={
+              page === "service-discovery" || page === "service-detail"
+                ? "page"
+                : undefined
+            }
+          >
+            Discover services
+          </a>
           {user ? (
             <>
               <span className="signed-in">{user.email}</span>
@@ -155,42 +185,73 @@ export default function App() {
         </nav>
       </header>
 
-      <section className="auth-layout" aria-labelledby="page-title">
-        <div className="auth-intro">
-          <p className="eyebrow">Event services marketplace</p>
-          <h1 id="page-title">
-            {page === "home" ? "Plan something worth remembering." : "Evently"}
-          </h1>
-          <p className="intro">
-            A thoughtful place to plan events and connect with the people who
-            bring them together.
-          </p>
-          {page === "home" && user && (
-            <p className="status" role="status">
-              Signed in as {user.email}
+      <section
+        className={
+          page === "service-discovery" || page === "service-detail"
+            ? "public-page-layout"
+            : "auth-layout"
+        }
+        aria-labelledby="page-title"
+      >
+        {page === "service-discovery" || page === "service-detail" ? (
+          <div className="public-page-content">
+            <p className="eyebrow">Evently services</p>
+            <h1 id="page-title">
+              {page === "service-discovery"
+                ? "Discover services"
+                : "Service details"}
+            </h1>
+            <p className="public-page-intro">
+              Browse published event services and compare their real
+              descriptions and prices.
             </p>
-          )}
-          {page === "home" && !userLoading && !user && (
-            <div className="home-actions">
-              <a className="button" href="/register">
-                Create your account
-              </a>
-              <a className="text-link" href="/login">
-                Already have an account? Sign in
-              </a>
-            </div>
-          )}
-          {userLoading && (
-            <p className="muted" role="status">
-              Checking your session…
+          </div>
+        ) : (
+          <div className="auth-intro">
+            <p className="eyebrow">Event services marketplace</p>
+            <h1 id="page-title">
+              {page === "home"
+                ? "Plan something worth remembering."
+                : "Evently"}
+            </h1>
+            <p className="intro">
+              A thoughtful place to plan events and connect with the people who
+              bring them together.
             </p>
-          )}
-          {sessionError && (
-            <p className="form-error" role="alert">
-              {sessionError}
-            </p>
-          )}
-        </div>
+            {page === "home" && user && (
+              <p className="status" role="status">
+                Signed in as {user.email}
+              </p>
+            )}
+            {page === "home" && (
+              <div className="home-actions">
+                <a className="button" href="/services">
+                  Discover services
+                </a>
+                {!userLoading && !user && (
+                  <>
+                    <a className="text-link" href="/register">
+                      Create your account
+                    </a>
+                    <a className="text-link" href="/login">
+                      Sign in
+                    </a>
+                  </>
+                )}
+              </div>
+            )}
+            {userLoading && (
+              <p className="muted" role="status">
+                Checking your session…
+              </p>
+            )}
+            {sessionError && (
+              <p className="form-error" role="alert">
+                {sessionError}
+              </p>
+            )}
+          </div>
+        )}
 
         {page === "provider-application" && (
           <ProviderApplicationScreen user={user} />
@@ -207,12 +268,18 @@ export default function App() {
         {page === "admin-service-listings" && (
           <AdminServiceListingsScreen user={user} />
         )}
+        {page === "service-discovery" && <ServiceDiscoveryScreen />}
+        {page === "service-detail" && (
+          <ServiceDetailScreen listingId={currentServiceListingId()} />
+        )}
         {page !== "home" &&
           page !== "provider-application" &&
           page !== "admin-provider-applications" &&
           page !== "professional-profile" &&
           page !== "professional-services" &&
-          page !== "admin-service-listings" && (
+          page !== "admin-service-listings" &&
+          page !== "service-discovery" &&
+          page !== "service-detail" && (
             <AuthScreen
               key={`${page}-${authScreenRevision}`}
               onAuthenticated={setUser}

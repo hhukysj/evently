@@ -21,6 +21,7 @@ export type {
   PublicServiceListingQuery,
   AdminServiceListingQuery,
   ProviderServiceListingQuery,
+  PublicServiceListingDto,
   ServiceCategorySlug,
   ServiceListingInput,
   ServiceListingModerationStatus,
