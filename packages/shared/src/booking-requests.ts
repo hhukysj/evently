@@ -8,12 +8,15 @@ export const bookingRequestStatuses = [
   "requested",
   "accepted",
   "declined",
+  "cancelled",
 ] as const;
 
 export const notificationTypes = [
   "booking_request_received",
   "booking_request_accepted",
   "booking_request_declined",
+  "booking_request_cancelled",
+  "booking_message_received",
 ] as const;
 
 export const bookingRequestStatusSchema = z.enum(bookingRequestStatuses);
@@ -104,6 +107,36 @@ export const bookingRequestCreationInputSchema = z
     }
   });
 
+export const bookingCancellationInputSchema = z.strictObject({
+  reason: z.string().trim().min(1).max(500).optional(),
+});
+
+export const bookingMessagesListQuerySchema = z.strictObject({
+  page: z.coerce.number().int().min(1).max(1000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(50).default(25),
+});
+
+export const bookingMessageInputSchema = z.strictObject({
+  body: z.string().trim().min(1).max(2000),
+});
+
+export const bookingMessageDtoSchema = z.strictObject({
+  id: z.uuid(),
+  senderRole: z.enum(["customer", "professional"]),
+  body: z.string().min(1).max(2000),
+  createdAt: z.iso.datetime(),
+  readAt: z.iso.datetime().nullable(),
+});
+
+export const bookingMessageListDtoSchema = z.strictObject({
+  messages: z.array(bookingMessageDtoSchema),
+  pagination: z.strictObject({
+    page: z.number().int().min(1).max(1000),
+    pageSize: z.number().int().min(1).max(50),
+    total: z.number().int().min(0),
+  }),
+});
+
 const listQueryFields = {
   page: z.coerce.number().int().min(1).max(1000).default(1),
   pageSize: z.coerce.number().int().min(1).max(50).default(25),
@@ -155,10 +188,24 @@ export const bookingRequestDtoSchema = z
     budgetMaxAmountPaise: amountPaiseSchema.nullable(),
     additionalNotes: z.string().min(1).max(1200).nullable(),
     status: bookingRequestStatusSchema,
+    cancellation: z
+      .strictObject({
+        cancelledAt: z.iso.datetime(),
+        cancelledByRole: z.enum(["customer", "professional"]),
+        reason: z.string().min(1).max(500).nullable(),
+      })
+      .nullable(),
     statusHistory: z.array(bookingRequestStatusHistoryDtoSchema),
     createdAt: z.iso.datetime(),
     updatedAt: z.iso.datetime(),
   })
+  .refine(
+    (value) => (value.status === "cancelled") === (value.cancellation !== null),
+    {
+      message: "Cancellation details must match the booking status.",
+      path: ["cancellation"],
+    },
+  )
   .refine(
     (value) =>
       value.service.pricingMethod === "quote_only"
@@ -187,6 +234,7 @@ export const notificationDtoSchema = z.strictObject({
   bookingRequestId: z.uuid(),
   createdAt: z.iso.datetime(),
   readAt: z.iso.datetime().nullable(),
+  messageId: z.uuid().nullable(),
 });
 
 export const notificationListQuerySchema = z.strictObject({
@@ -205,6 +253,15 @@ export type NotificationType = z.infer<typeof notificationTypeSchema>;
 export type BookingRequestCreationInput = z.infer<
   typeof bookingRequestCreationInputSchema
 >;
+export type BookingCancellationInput = z.infer<
+  typeof bookingCancellationInputSchema
+>;
+export type BookingMessagesListQuery = z.infer<
+  typeof bookingMessagesListQuerySchema
+>;
+export type BookingMessageInput = z.infer<typeof bookingMessageInputSchema>;
+export type BookingMessageDto = z.infer<typeof bookingMessageDtoSchema>;
+export type BookingMessageListDto = z.infer<typeof bookingMessageListDtoSchema>;
 export type CustomerBookingRequestListQuery = z.infer<
   typeof customerBookingRequestListQuerySchema
 >;

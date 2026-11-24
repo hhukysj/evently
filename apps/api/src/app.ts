@@ -28,6 +28,7 @@ import {
 } from "./modules/service-listings/routes.js";
 import type { ServiceListingService } from "./modules/service-listings/service.js";
 import {
+  createBookingLifecycleRouter,
   createCustomerBookingRequestRouter,
   createNotificationRouter,
   createProfessionalBookingRequestRouter,
@@ -201,6 +202,10 @@ export function createApp(
       authApi.use(
         "/notifications",
         createNotificationRouter(bookingRouteConfiguration),
+      );
+      authApi.use(
+        "/bookings",
+        createBookingLifecycleRouter(bookingRouteConfiguration),
       );
     }
     if (authConfiguration.providerService) {

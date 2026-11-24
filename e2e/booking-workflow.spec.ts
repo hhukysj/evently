@@ -87,10 +87,7 @@ test.beforeEach(async ({ page }) => {
   });
   page.on("requestfailed", (request) => {
     const errorText = request.failure()?.errorText ?? "request failed";
-    if (
-      request.method() === "GET" &&
-      errorText.includes("net::ERR_ABORTED")
-    ) {
+    if (request.method() === "GET" && errorText.includes("net::ERR_ABORTED")) {
       return;
     }
     state.failures.push(
@@ -242,7 +239,12 @@ test("customer submits a request, sees the professional response, and competing 
       response.request().method() === "POST",
   );
   await page.getByRole("button", { name: "Send booking request" }).click();
-  expect((await createResponse).status()).toBe(201);
+  const createdResponse = await createResponse;
+  expect(createdResponse.status()).toBe(201);
+  const createdPayload = (await createdResponse.json()) as {
+    data: { bookingRequest: { id: string } };
+  };
+  const bookingRequestId = createdPayload.data.bookingRequest.id;
   await expect(page.getByText(/not a confirmed booking yet/)).toBeVisible();
   await page.getByRole("link", { name: "View my requests" }).click();
   await expect(page.getByText("Awaiting professional response")).toBeVisible();
@@ -262,6 +264,62 @@ test("customer submits a request, sees the professional response, and competing 
     await page.goto("/booking-requests");
     await page.getByRole("button", { name: "Refresh" }).click();
     await expect(page.getByText("Accepted by professional")).toBeVisible();
+
+    const customerMessage = `Customer message ${runId}`;
+    const customerMessageResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/v1/bookings/${bookingRequestId}/messages`) &&
+        response.request().method() === "POST",
+    );
+    await page.getByLabel("Write a message").fill(customerMessage);
+    await page.getByRole("button", { name: "Send message" }).click();
+    expect((await customerMessageResponse).status()).toBe(201);
+
+    await providerPage.goto("/professional/booking-requests");
+    await expect(providerPage.getByText(customerMessage)).toBeVisible();
+    const professionalMessage = `Professional reply ${runId}`;
+    const professionalMessageResponse = providerPage.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/v1/bookings/${bookingRequestId}/messages`) &&
+        response.request().method() === "POST",
+    );
+    await providerPage.getByLabel("Write a message").fill(professionalMessage);
+    await providerPage.getByRole("button", { name: "Send message" }).click();
+    expect((await professionalMessageResponse).status()).toBe(201);
+
+    await page.reload();
+    await expect(page.getByText(customerMessage)).toBeVisible();
+    await expect(page.getByText(professionalMessage)).toBeVisible();
+    await providerPage.reload();
+    await expect(providerPage.getByText(customerMessage)).toBeVisible();
+    await expect(providerPage.getByText(professionalMessage)).toBeVisible();
+
+    await page.getByRole("button", { name: "Cancel booking" }).click();
+    const cancellationPrompt = page.getByRole("group", {
+      name: "Confirm booking cancellation",
+    });
+    await expect(cancellationPrompt).toBeVisible();
+    await expect(cancellationPrompt).toContainText(
+      "mark the request as cancelled and notify the other participant",
+    );
+    const cancellationResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/v1/bookings/${bookingRequestId}/cancel`) &&
+        response.request().method() === "POST",
+    );
+    await cancellationPrompt
+      .getByRole("button", { name: "Confirm cancellation" })
+      .click();
+    expect((await cancellationResponse).status()).toBe(200);
+    await expect(page.getByText("Cancelled", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("Booking cancelled. The other participant has been notified."),
+    ).toBeVisible();
+
+    await page.reload();
+    await expect(page.getByText("Cancelled", { exact: true })).toBeVisible();
+    await providerPage.reload();
+    await expect(providerPage.getByText("Cancelled", { exact: true })).toBeVisible();
 
     const competingRequestId = await submitBooking(
       page,
@@ -290,17 +348,19 @@ test("customer submits a request, sees the professional response, and competing 
     ]);
     const acceptResponsePromise = providerPage.waitForResponse(
       (response) =>
-        response.url().includes(
-          `/professional/booking-requests/${competingRequestId}/accept`,
-        ) &&
-        response.request().method() === "POST",
+        response
+          .url()
+          .includes(
+            `/professional/booking-requests/${competingRequestId}/accept`,
+          ) && response.request().method() === "POST",
     );
     const declineResponsePromise = competingProviderPage.waitForResponse(
       (response) =>
-        response.url().includes(
-          `/professional/booking-requests/${competingRequestId}/decline`,
-        ) &&
-        response.request().method() === "POST",
+        response
+          .url()
+          .includes(
+            `/professional/booking-requests/${competingRequestId}/decline`,
+          ) && response.request().method() === "POST",
     );
     await Promise.all([
       acceptCard.getByRole("button", { name: "Accept request" }).click(),
@@ -377,11 +437,29 @@ test.afterAll(async () => {
         const requestIds = requests.rows.map(({ id }) => id);
         if (requestIds.length > 0) {
           await db.query(
-            "DELETE FROM notifications WHERE booking_request_id = ANY($1::uuid[])",
+            `DELETE FROM notifications
+              WHERE booking_request_id = ANY($1::uuid[])
+                 OR message_id IN (
+                   SELECT m.id FROM messages m
+                   JOIN conversations c ON c.id = m.conversation_id
+                   WHERE c.booking_request_id = ANY($1::uuid[])
+                 )`,
             [requestIds],
           );
           await db.query(
             "DELETE FROM booking_status_history WHERE booking_request_id = ANY($1::uuid[])",
+            [requestIds],
+          );
+          await db.query(
+            `DELETE FROM messages
+              WHERE conversation_id IN (
+                SELECT id FROM conversations
+                WHERE booking_request_id = ANY($1::uuid[])
+              )`,
+            [requestIds],
+          );
+          await db.query(
+            "DELETE FROM conversations WHERE booking_request_id = ANY($1::uuid[])",
             [requestIds],
           );
           await db.query(

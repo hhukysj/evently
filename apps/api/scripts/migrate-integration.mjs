@@ -20,6 +20,7 @@ const EXPECTED_MIGRATION_TAGS = [
   "0007_dusty_falcon",
   "0008_heavy_the_spike",
   "0009_evently_booking_foundation",
+  "0010_booking_cancellation_conversations",
 ];
 
 const EXPECTED_HISTORY_COLUMNS = [
@@ -251,7 +252,7 @@ async function assertOnlyBookingMigrationPending(client, migrations) {
       SELECT hash, created_at::text AS created_at
         FROM drizzle.__drizzle_migrations
        ORDER BY created_at, id`);
-    const appliedMigrations = migrations.slice(0, 9);
+    const appliedMigrations = migrations.slice(0, 10);
     if (historyResult.rows.length !== appliedMigrations.length) {
       throw new Error("Applied migration history is incomplete or unexpected.");
     }
@@ -276,9 +277,9 @@ async function assertOnlyBookingMigrationPending(client, migrations) {
     if (
       latestAppliedTimestamp !== appliedMigrations.at(-1)?.when ||
       pendingMigrations.length !== 1 ||
-      pendingMigrations[0]?.tag !== "0009_evently_booking_foundation"
+      pendingMigrations[0]?.tag !== "0010_booking_cancellation_conversations"
     ) {
-      throw new Error("Migration 0009 is not the only pending migration.");
+      throw new Error("Migration 0010 is not the only pending migration.");
     }
   } finally {
     if (transactionOpen) {

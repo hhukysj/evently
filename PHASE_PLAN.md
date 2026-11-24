@@ -187,26 +187,50 @@ Exit gate:
 
 ## Phase 6 — Event briefs and booking workflow
 
+M4 delivered the event brief and request/response workflow with the booking
+status transitions `requested → accepted | declined`. M4 did not include
+cancellation or persistent participant messaging.
+
+M5 extends this lifecycle with `cancelled` and participant messaging. A
+customer may cancel while a request is `requested` or `accepted`; a
+professional may cancel only while it is `accepted`. Acceptance and
+cancellation serialize on the booking row. Provider-proposed term amendments
+are formally deferred until after the MVP.
+
 Tasks:
 
-1. Build customer event brief with event type, date/time/timezone, location, estimated guest count, budget range, requested services, and notes.
-2. Customer can request a booking from a professional.
-3. Professional can accept, decline, or propose a change using explicit actions.
-4. Define cancellation and completion rules before enabling them.
-5. Store booking status history and durable in-app notifications.
-6. Enforce transitions in a domain service and database transaction; use conditional updates or row locks for concurrent requests.
+1. M4: Build the customer event brief and request workflow with event type, date/time/timezone, location, estimated guest count, budget range, requested services, and notes.
+2. M4: Let customers submit booking requests; professionals may accept or decline using explicit actions.
+3. M5: Let customers cancel while `requested` or `accepted`; let professionals cancel while `accepted`. Record the actor, time, optional reason, status-history event, and other-party notification atomically.
+4. M5: Maintain one participant conversation per booking and provide persistent, paginated messages with participant-only access and recipient notifications.
+5. Store booking status history and durable in-app notifications for lifecycle transitions.
+6. Enforce transitions in a domain service and database transaction; use row locks or conditional updates for concurrent acceptance/cancellation.
 7. Make retry-sensitive creation idempotent or safely deduplicated.
 8. Ensure all screens use real API/database state.
+
+Provider-proposed term amendments are deferred until after the MVP; no UI or API should imply they are supported.
 
 Exit gate:
 
 - Invalid transitions are rejected server-side.
 - Concurrent accept/cancel attempts cannot corrupt state.
+- Cancellation permissions are enforced for both participants, with stale-state conflicts surfaced to the client.
 - Duplicate submissions are handled safely.
-- E2E tests cover customer request and professional response.
+- Tests cover customer request, professional response, cancellation, participant messaging, IDOR rejection, and concurrent acceptance/cancellation.
 - No payment-success UI or payment claim exists.
 
+Implementation status: M4's request/accept/decline workflow is present, and
+the M5 source, UI, migration, and tests are implemented. In this work session,
+`npm run check` completed typecheck, lint, and formatting, then Vitest could not
+start because the environment denied access while resolving `vitest.config.ts`;
+the unit-test and production-build portions remain unverified. Migration 0010
+and the M5 integration suite are also pending. The exit gate is not met.
+
 ## Phase 7 — Messaging, notifications, reviews, and reports
+
+Booking-linked persistent messaging and message notifications are pulled
+forward into M5 to complete the booking lifecycle. Other Phase 7 work remains
+in scope below.
 
 Tasks:
 

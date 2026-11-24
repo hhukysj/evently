@@ -54,6 +54,7 @@ const requestDto: BookingRequestDto = {
   budgetMaxAmountPaise: 200000,
   additionalNotes: "Accessible seating, please.",
   status: "requested",
+  cancellation: null,
   statusHistory: [
     {
       id: "45dbab1c-39a5-4ac6-b192-f70ce39b73d1",
@@ -257,5 +258,128 @@ describe("booking request lists", () => {
     expect(
       screen.getByRole("link", { name: "Sign in" }).getAttribute("href"),
     ).toContain("returnTo=%2Fbooking-requests");
+  });
+
+  it("shows the conversation and appends a server-confirmed message", async () => {
+    const message = {
+      id: "6d61e0ed-512f-465b-b66b-28bd9bbcd791",
+      senderRole: "customer",
+      body: "Please let me know about setup timing.",
+      createdAt: "2026-01-03T12:00:00.000Z",
+      readAt: null,
+    };
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.startsWith("/api/v1/booking-requests/me?")) {
+        return Promise.resolve(listResponse(requestDto));
+      }
+      if (
+        path === `/api/v1/bookings/${requestDto.id}/messages?page=1&pageSize=25`
+      ) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              messages: [],
+              pagination: { page: 1, pageSize: 25, total: 0 },
+            },
+          }),
+        );
+      }
+      if (path === "/api/v1/auth/csrf") {
+        return Promise.resolve(
+          jsonResponse({ data: { csrfToken: "csrf-test" } }),
+        );
+      }
+      if (
+        path === `/api/v1/bookings/${requestDto.id}/messages` &&
+        init?.method === "POST"
+      ) {
+        return Promise.resolve(jsonResponse({ data: { message } }, 201));
+      }
+      return Promise.reject(new Error(`Unexpected request: ${path}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <CustomerBookingRequestsScreen user={customer} userLoading={false} />,
+    );
+
+    fireEvent.change(await screen.findByLabelText("Write a message"), {
+      target: { value: message.body },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send message" }));
+
+    expect(await screen.findByText(message.body)).toBeTruthy();
+    expect(screen.getByText("You")).toBeTruthy();
+    expect(await screen.findByRole("status")).toBeTruthy();
+  });
+
+  it("requires confirmation before cancellation and refreshes the server status", async () => {
+    let current: BookingRequestDto = { ...requestDto, status: "accepted" };
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.startsWith("/api/v1/booking-requests/me?")) {
+        return Promise.resolve(listResponse(current));
+      }
+      if (path === "/api/v1/auth/csrf") {
+        return Promise.resolve(
+          jsonResponse({ data: { csrfToken: "csrf-test" } }),
+        );
+      }
+      if (
+        path === `/api/v1/bookings/${requestDto.id}/cancel` &&
+        init?.method === "POST"
+      ) {
+        current = {
+          ...current,
+          status: "cancelled",
+          cancellation: {
+            cancelledAt: "2026-01-03T12:00:00.000Z",
+            cancelledByRole: "customer",
+            reason: null,
+          },
+        };
+        return Promise.resolve(
+          jsonResponse({ data: { bookingRequest: current } }),
+        );
+      }
+      if (path.startsWith(`/api/v1/bookings/${requestDto.id}/messages?`)) {
+        return Promise.resolve(
+          jsonResponse({
+            data: {
+              messages: [],
+              pagination: { page: 1, pageSize: 25, total: 0 },
+            },
+          }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected request: ${path}`));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(
+      <CustomerBookingRequestsScreen user={customer} userLoading={false} />,
+    );
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Cancel booking" }),
+    );
+    expect(
+      screen.getByText(
+        /mark the request as cancelled and notify the other participant/i,
+      ),
+    ).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm cancellation" }),
+    );
+
+    expect(await screen.findByText("Cancelled")).toBeTruthy();
+    expect(
+      await screen.findByText(
+        "Booking cancelled. The other participant has been notified.",
+      ),
+    ).toBeTruthy();
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/v1/bookings/${requestDto.id}/cancel`,
+      expect.objectContaining({ method: "POST" }),
+    );
   });
 });

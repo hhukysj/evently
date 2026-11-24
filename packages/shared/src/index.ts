@@ -1,5 +1,10 @@
 import { z } from "zod";
 export {
+  bookingCancellationInputSchema,
+  bookingMessageDtoSchema,
+  bookingMessageInputSchema,
+  bookingMessageListDtoSchema,
+  bookingMessagesListQuerySchema,
   bookingRequestCreationInputSchema,
   bookingRequestDtoSchema,
   bookingRequestStatusSchema,
@@ -14,6 +19,11 @@ export {
   providerBookingRequestListQuerySchema,
 } from "./booking-requests.js";
 export type {
+  BookingCancellationInput,
+  BookingMessageDto,
+  BookingMessageInput,
+  BookingMessageListDto,
+  BookingMessagesListQuery,
   BookingRequestCreationInput,
   BookingRequestDto,
   BookingRequestStatus,

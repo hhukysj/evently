@@ -10,6 +10,8 @@ import * as schema from "../../db/schema.js";
 import {
   bookingRequests,
   bookingStatusHistory,
+  conversations,
+  messages,
   notifications,
   professionalProfiles,
   providerApplications,
@@ -399,6 +401,15 @@ async function expectNoBookingEffects(
 }
 
 async function expectNoRequestChildren(requestId: string): Promise<void> {
+  const conversationRows = await db
+    .select({ id: conversations.id })
+    .from(conversations)
+    .where(eq(conversations.bookingRequestId, requestId));
+  const messageRows = await db
+    .select({ id: messages.id })
+    .from(messages)
+    .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+    .where(eq(conversations.bookingRequestId, requestId));
   const history = await db
     .select({ id: bookingStatusHistory.id })
     .from(bookingStatusHistory)
@@ -409,6 +420,8 @@ async function expectNoRequestChildren(requestId: string): Promise<void> {
     .where(eq(notifications.bookingRequestId, requestId));
   expect(history).toHaveLength(0);
   expect(notificationRows).toHaveLength(0);
+  expect(conversationRows).toHaveLength(0);
+  expect(messageRows).toHaveLength(0);
 }
 
 async function createMissingUserId(): Promise<string> {
@@ -476,10 +489,15 @@ async function createRequestAs(
   actor: LoggedInAgent,
   input: ReturnType<typeof createInput>,
 ) {
-  return actor.agent
+  const response = await actor.agent
     .post("/api/v1/booking-requests")
     .set(csrfHeaders(actor.csrfToken))
     .send(input);
+  const requestId = response.body.data?.bookingRequest?.id;
+  if (typeof requestId === "string") {
+    bookingIds.add(requestId);
+  }
+  return response;
 }
 
 type TestResponse = Awaited<ReturnType<typeof createRequestAs>>;
@@ -534,9 +552,22 @@ afterAll(async () => {
       const fixtureBookingIds = [...bookingIds];
       await db.transaction(async (transaction) => {
         if (fixtureBookingIds.length > 0) {
+          const fixtureConversations = await transaction
+            .select({ id: conversations.id })
+            .from(conversations)
+            .where(inArray(conversations.bookingRequestId, fixtureBookingIds));
+          const conversationIds = fixtureConversations.map(({ id }) => id);
           await transaction
             .delete(notifications)
             .where(inArray(notifications.bookingRequestId, fixtureBookingIds));
+          if (conversationIds.length > 0) {
+            await transaction
+              .delete(messages)
+              .where(inArray(messages.conversationId, conversationIds));
+          }
+          await transaction
+            .delete(conversations)
+            .where(inArray(conversations.bookingRequestId, fixtureBookingIds));
           await transaction
             .delete(bookingStatusHistory)
             .where(
@@ -650,6 +681,12 @@ describe("booking request API integration", () => {
       currency: "INR",
     });
     expect(bookingRequest.statusHistory).toHaveLength(1);
+    expect(bookingRequest.cancellation).toBeNull();
+    const conversationRows = await db
+      .select({ id: conversations.id })
+      .from(conversations)
+      .where(eq(conversations.bookingRequestId, bookingRequest.id as string));
+    expect(conversationRows).toHaveLength(1);
     expect(created.text).not.toContain("passwordHash");
     expect(created.text).not.toContain("moderationReason");
     expect(bookingRequest).not.toHaveProperty("customerEmail");
@@ -1085,5 +1122,286 @@ describe("booking request API integration", () => {
           : "booking_request_declined",
       ].sort(),
     );
+  });
+
+  it("enforces cancellation rules and records cancellation history and notice", async () => {
+    const customer = await login(customerUserId);
+    const provider = await login(professionalUserId);
+    const outsider = await login(secondCustomerUserId);
+
+    const requested = await createRequestAs(customer, createInput());
+    expect(requested.status).toBe(201);
+    const requestedId = requested.body.data.bookingRequest.id as string;
+    bookingIds.add(requestedId);
+
+    const outsiderCancellation = await outsider.agent
+      .post(`/api/v1/bookings/${requestedId}/cancel`)
+      .set(csrfHeaders(outsider.csrfToken))
+      .send({});
+    expect(outsiderCancellation.status).toBe(404);
+    const prematureProfessionalCancellation = await provider.agent
+      .post(`/api/v1/bookings/${requestedId}/cancel`)
+      .set(csrfHeaders(provider.csrfToken))
+      .send({});
+    expect(prematureProfessionalCancellation.status).toBe(409);
+
+    const cancelledByCustomer = await customer.agent
+      .post(`/api/v1/bookings/${requestedId}/cancel`)
+      .set(csrfHeaders(customer.csrfToken))
+      .send({ reason: "Plans changed" });
+    expect(cancelledByCustomer.status).toBe(200);
+    expect(cancelledByCustomer.body.data.bookingRequest.status).toBe(
+      "cancelled",
+    );
+    expect(
+      cancelledByCustomer.body.data.bookingRequest.cancellation,
+    ).toMatchObject({
+      cancelledByRole: "customer",
+      reason: "Plans changed",
+    });
+    const customerCancellationNotice = await db
+      .select({ recipientUserId: notifications.recipientUserId })
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.bookingRequestId, requestedId),
+          eq(notifications.type, "booking_request_cancelled"),
+        ),
+      );
+    expect(customerCancellationNotice).toEqual([
+      { recipientUserId: professionalUserId },
+    ]);
+    expect(
+      (
+        await provider.agent
+          .post(`/api/v1/professional/booking-requests/${requestedId}/accept`)
+          .set(csrfHeaders(provider.csrfToken))
+          .send({})
+      ).status,
+    ).toBe(409);
+    expect(
+      (
+        await customer.agent
+          .post(`/api/v1/bookings/${requestedId}/cancel`)
+          .set(csrfHeaders(customer.csrfToken))
+          .send({})
+      ).status,
+    ).toBe(409);
+
+    const accepted = await createRequestAs(customer, createInput());
+    expect(accepted.status).toBe(201);
+    const acceptedId = accepted.body.data.bookingRequest.id as string;
+    bookingIds.add(acceptedId);
+    expect(
+      (
+        await provider.agent
+          .post(`/api/v1/professional/booking-requests/${acceptedId}/accept`)
+          .set(csrfHeaders(provider.csrfToken))
+          .send({})
+      ).status,
+    ).toBe(200);
+    const cancelledByProfessional = await provider.agent
+      .post(`/api/v1/bookings/${acceptedId}/cancel`)
+      .set(csrfHeaders(provider.csrfToken))
+      .send({});
+    expect(cancelledByProfessional.status).toBe(200);
+    expect(cancelledByProfessional.body.data.bookingRequest.status).toBe(
+      "cancelled",
+    );
+    expect(
+      cancelledByProfessional.body.data.bookingRequest.cancellation
+        .cancelledByRole,
+    ).toBe("professional");
+
+    const history = await db
+      .select({
+        previousStatus: bookingStatusHistory.previousStatus,
+        newStatus: bookingStatusHistory.newStatus,
+      })
+      .from(bookingStatusHistory)
+      .where(eq(bookingStatusHistory.bookingRequestId, acceptedId))
+      .orderBy(bookingStatusHistory.createdAt, bookingStatusHistory.id);
+    expect(
+      history.map(({ previousStatus, newStatus }) => [
+        previousStatus,
+        newStatus,
+      ]),
+    ).toEqual([
+      [null, "requested"],
+      ["requested", "accepted"],
+      ["accepted", "cancelled"],
+    ]);
+    const cancellationNotifications = await db
+      .select({
+        recipientUserId: notifications.recipientUserId,
+        type: notifications.type,
+      })
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.bookingRequestId, acceptedId),
+          eq(notifications.type, "booking_request_cancelled"),
+        ),
+      );
+    expect(cancellationNotifications).toEqual([
+      { recipientUserId: customerUserId, type: "booking_request_cancelled" },
+    ]);
+
+    const customerCancelsAccepted = await createRequestAs(
+      customer,
+      createInput(),
+    );
+    expect(customerCancelsAccepted.status).toBe(201);
+    const customerCancelsAcceptedId = customerCancelsAccepted.body.data
+      .bookingRequest.id as string;
+    bookingIds.add(customerCancelsAcceptedId);
+    expect(
+      (
+        await provider.agent
+          .post(
+            `/api/v1/professional/booking-requests/${customerCancelsAcceptedId}/accept`,
+          )
+          .set(csrfHeaders(provider.csrfToken))
+          .send({})
+      ).status,
+    ).toBe(200);
+    const acceptedCancellation = await customer.agent
+      .post(`/api/v1/bookings/${customerCancelsAcceptedId}/cancel`)
+      .set(csrfHeaders(customer.csrfToken))
+      .send({});
+    expect(acceptedCancellation.status).toBe(200);
+    expect(acceptedCancellation.body.data.bookingRequest.status).toBe(
+      "cancelled",
+    );
+    expect(
+      acceptedCancellation.body.data.bookingRequest.cancellation
+        .cancelledByRole,
+    ).toBe("customer");
+  });
+
+  it("serializes a customer cancellation against professional acceptance", async () => {
+    const customer = await login(customerUserId);
+    const concurrentProvider = await login(professionalUserId, true);
+    const created = await createRequestAs(customer, createInput());
+    expect(created.status).toBe(201);
+    const requestId = created.body.data.bookingRequest.id as string;
+    bookingIds.add(requestId);
+
+    const [cancel, accept] = await Promise.all([
+      customer.agent
+        .post(`/api/v1/bookings/${requestId}/cancel`)
+        .set(csrfHeaders(customer.csrfToken))
+        .send({}),
+      concurrentProvider.agent
+        .post(`/api/v1/professional/booking-requests/${requestId}/accept`)
+        .set(csrfHeaders(concurrentProvider.csrfToken))
+        .send({}),
+    ]);
+    expect(cancel.status).toBe(200);
+    expect([200, 409]).toContain(accept.status);
+    const [stored] = await db
+      .select({ status: bookingRequests.status })
+      .from(bookingRequests)
+      .where(eq(bookingRequests.id, requestId))
+      .limit(1);
+    expect(stored?.status).toBe("cancelled");
+    const history = await db
+      .select({
+        previousStatus: bookingStatusHistory.previousStatus,
+        newStatus: bookingStatusHistory.newStatus,
+      })
+      .from(bookingStatusHistory)
+      .where(eq(bookingStatusHistory.bookingRequestId, requestId))
+      .orderBy(bookingStatusHistory.createdAt, bookingStatusHistory.id);
+    expect(
+      history.map(({ previousStatus, newStatus }) => [
+        previousStatus,
+        newStatus,
+      ]),
+    ).toEqual(
+      accept.status === 200
+        ? [
+            [null, "requested"],
+            ["requested", "accepted"],
+            ["accepted", "cancelled"],
+          ]
+        : [
+            [null, "requested"],
+            ["requested", "cancelled"],
+          ],
+    );
+  });
+
+  it("restricts messages to participants and notifies each recipient per message", async () => {
+    const customer = await login(customerUserId);
+    const provider = await login(professionalUserId);
+    const outsider = await login(secondCustomerUserId);
+    const created = await createRequestAs(customer, createInput());
+    expect(created.status).toBe(201);
+    const requestId = created.body.data.bookingRequest.id as string;
+    bookingIds.add(requestId);
+
+    const initialMessages = await customer.agent.get(
+      `/api/v1/bookings/${requestId}/messages`,
+    );
+    expect(initialMessages.status).toBe(200);
+    expect(initialMessages.body.data.messages).toEqual([]);
+
+    const forbiddenList = await outsider.agent.get(
+      `/api/v1/bookings/${requestId}/messages`,
+    );
+    expect(forbiddenList.status).toBe(404);
+    const forbiddenSend = await outsider.agent
+      .post(`/api/v1/bookings/${requestId}/messages`)
+      .set(csrfHeaders(outsider.csrfToken))
+      .send({ body: "Not my booking" });
+    expect(forbiddenSend.status).toBe(404);
+
+    const invalidMessage = await customer.agent
+      .post(`/api/v1/bookings/${requestId}/messages`)
+      .set(csrfHeaders(customer.csrfToken))
+      .send({ body: "   " });
+    expect(invalidMessage.status).toBe(400);
+
+    const sentByProfessional = await provider.agent
+      .post(`/api/v1/bookings/${requestId}/messages`)
+      .set(csrfHeaders(provider.csrfToken))
+      .send({ body: "I can discuss the event details." });
+    expect(sentByProfessional.status).toBe(201);
+    expect(sentByProfessional.body.data.message.senderRole).toBe(
+      "professional",
+    );
+    const customerMessages = await customer.agent.get(
+      `/api/v1/bookings/${requestId}/messages?page=1&pageSize=10`,
+    );
+    expect(customerMessages.status).toBe(200);
+    expect(customerMessages.body.data.messages).toHaveLength(1);
+    expect(customerMessages.body.data.messages[0].readAt).toBeTruthy();
+
+    const sentByCustomer = await customer.agent
+      .post(`/api/v1/bookings/${requestId}/messages`)
+      .set(csrfHeaders(customer.csrfToken))
+      .send({ body: "Thank you. Please share the setup details." });
+    expect(sentByCustomer.status).toBe(201);
+    expect(sentByCustomer.body.data.message.senderRole).toBe("customer");
+    const messageNotifications = await db
+      .select({
+        messageId: notifications.messageId,
+        recipientUserId: notifications.recipientUserId,
+      })
+      .from(notifications)
+      .where(
+        and(
+          eq(notifications.bookingRequestId, requestId),
+          eq(notifications.type, "booking_message_received"),
+        ),
+      );
+    expect(messageNotifications).toHaveLength(2);
+    expect(
+      messageNotifications.map(({ recipientUserId }) => recipientUserId).sort(),
+    ).toEqual([customerUserId, professionalUserId].sort());
+    expect(
+      messageNotifications.every(({ messageId }) => messageId !== null),
+    ).toBe(true);
   });
 });

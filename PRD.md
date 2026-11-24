@@ -58,7 +58,8 @@ A professional account can represent an organizer, event manager,
 artist, or vendor. A user may select multiple service categories. -
 Create and maintain a professional profile, service areas, portfolio,
 services/packages, indicative prices, and availability. - Receive,
-accept, decline, or propose changes to booking requests. - View only
+accept, or decline booking requests. Provider-proposed term amendments
+are deferred until after the MVP. - View only
 enquiries and bookings they are authorized to access. - Communicate with
 customers attached to a valid conversation. - Mark eligible bookings
 completed, subject to the agreed completion workflow. - Respond to
@@ -98,14 +99,14 @@ Location text alone must not be presented as precise distance.
 ### Booking lifecycle
 
 Use explicit, server-validated states:
-`requested → accepted | declined | cancelled` An accepted booking may
-proceed to `completed`; disputes/reports are separate records rather
-than improvised status strings. Change requests must be represented
-explicitly or recorded as a proposed revision, not silently overwrite
-agreed details. - Prevent duplicate submissions with idempotency or
-request deduplication. - Enforce valid transitions on the server in a
-database transaction. - Define cancellation permissions and cut-offs
-before enabling cancellation. - A professional's acceptance does not
+`requested → accepted | declined | cancelled`. A customer may cancel while
+requested or accepted; a professional may cancel while accepted. No other
+cancellation transition is permitted. An accepted booking may proceed to
+`completed`; disputes/reports are separate records rather than improvised
+status strings. Provider-proposed term amendments are deferred until after
+the MVP; agreed details must not be silently overwritten. - Prevent duplicate
+submissions with idempotency or request deduplication. - Enforce valid
+transitions on the server in a database transaction. - A professional's acceptance does not
 charge a customer in the MVP. - Do not imply that a booking is paid or
 guaranteed unless a payment workflow exists.
 

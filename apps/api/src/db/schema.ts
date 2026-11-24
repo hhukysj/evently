@@ -76,12 +76,15 @@ export const bookingRequestStatusEnum = pgEnum("booking_request_status", [
   "requested",
   "accepted",
   "declined",
+  "cancelled",
 ]);
 
 export const notificationTypeEnum = pgEnum("notification_type", [
   "booking_request_received",
   "booking_request_accepted",
   "booking_request_declined",
+  "booking_request_cancelled",
+  "booking_message_received",
 ]);
 
 export const users = pgTable(
@@ -445,6 +448,11 @@ export const bookingRequests = pgTable(
     budgetMaxAmountPaise: integer("budget_max_amount_paise"),
     additionalNotes: varchar("additional_notes", { length: 1200 }),
     status: bookingRequestStatusEnum("status").notNull().default("requested"),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    cancelledByUserId: uuid("cancelled_by_user_id").references(() => users.id, {
+      onDelete: "restrict",
+    }),
+    cancellationReason: varchar("cancellation_reason", { length: 500 }),
     idempotencyKey: uuid("idempotency_key").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -519,6 +527,13 @@ export const bookingRequests = pgTable(
       "booking_requests_budget_ordered",
       sql`(${table.budgetMinAmountPaise} IS NULL OR ${table.budgetMaxAmountPaise} IS NULL OR ${table.budgetMinAmountPaise} <= ${table.budgetMaxAmountPaise})`,
     ),
+    check(
+      "booking_requests_cancellation_metadata_valid",
+      sql`(
+        (${table.cancelledAt} IS NULL AND ${table.cancelledByUserId} IS NULL AND ${table.cancellationReason} IS NULL)
+        OR (${table.cancelledAt} IS NOT NULL AND ${table.cancelledByUserId} IS NOT NULL AND (${table.cancellationReason} IS NULL OR char_length(btrim(${table.cancellationReason})) BETWEEN 1 AND 500))
+      )`,
+    ),
   ],
 );
 
@@ -556,6 +571,53 @@ export const bookingStatusHistory = pgTable(
   ],
 );
 
+export const conversations = pgTable(
+  "conversations",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    bookingRequestId: uuid("booking_request_id")
+      .notNull()
+      .references(() => bookingRequests.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("conversations_booking_request_unique").on(
+      table.bookingRequestId,
+    ),
+  ],
+);
+
+export const messages = pgTable(
+  "messages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    conversationId: uuid("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "restrict" }),
+    senderUserId: uuid("sender_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    body: varchar("body", { length: 2000 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("messages_conversation_created_idx").on(
+      table.conversationId,
+      table.createdAt,
+      table.id,
+    ),
+    check(
+      "messages_body_nonblank",
+      sql`char_length(btrim(${table.body})) BETWEEN 1 AND 2000`,
+    ),
+  ],
+);
+
 export const notifications = pgTable(
   "notifications",
   {
@@ -567,17 +629,21 @@ export const notifications = pgTable(
     bookingRequestId: uuid("booking_request_id")
       .notNull()
       .references(() => bookingRequests.id, { onDelete: "restrict" }),
+    messageId: uuid("message_id").references(() => messages.id, {
+      onDelete: "restrict",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
     readAt: timestamp("read_at", { withTimezone: true }),
   },
   (table) => [
-    uniqueIndex("notifications_request_recipient_type_unique").on(
-      table.bookingRequestId,
-      table.recipientUserId,
-      table.type,
-    ),
+    uniqueIndex("notifications_request_recipient_type_unique")
+      .on(table.bookingRequestId, table.recipientUserId, table.type)
+      .where(sql`${table.messageId} IS NULL`),
+    uniqueIndex("notifications_message_id_unique")
+      .on(table.messageId)
+      .where(sql`${table.messageId} IS NOT NULL`),
     index("notifications_recipient_created_idx").on(
       table.recipientUserId,
       table.createdAt,

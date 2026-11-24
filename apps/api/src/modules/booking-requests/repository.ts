@@ -6,6 +6,7 @@ import {
   exists,
   inArray,
   isNull,
+  ne,
   sql,
 } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
@@ -13,12 +14,17 @@ import type { NodePgDatabase } from "drizzle-orm/node-postgres";
 import type {
   BookingRequestCreationInput,
   BookingRequestDto,
+  BookingCancellationInput,
+  BookingMessageDto,
+  BookingMessageInput,
+  BookingMessagesListQuery,
   CustomerBookingRequestListQuery,
   NotificationDto,
   NotificationListQuery,
   ProviderBookingRequestListQuery,
 } from "@evently/shared";
 import {
+  bookingMessageDtoSchema,
   bookingRequestDtoSchema,
   notificationDtoSchema,
 } from "@evently/shared";
@@ -26,6 +32,8 @@ import * as schema from "../../db/schema.js";
 import {
   bookingRequests,
   bookingStatusHistory,
+  conversations,
+  messages,
   notifications,
   professionalProfiles,
   providerApplications,
@@ -47,6 +55,17 @@ export interface NotificationPage {
   notifications: NotificationDto[];
   total: number;
 }
+
+export interface BookingMessagePage {
+  messages: BookingMessageDto[];
+  total: number;
+}
+
+export type BookingCancellationResult =
+  | { type: "success"; bookingRequest: BookingRequestDto }
+  | { type: "missing" }
+  | { type: "conflict" }
+  | { type: "actor_ineligible" };
 
 export type BookingCreationResult =
   | { type: "created" | "replayed"; bookingRequest: BookingRequestDto }
@@ -88,6 +107,21 @@ export interface BookingRequestRepository {
     requestId: string,
     decision: "accepted" | "declined",
   ): Promise<BookingDecisionResult>;
+  cancelRequest(
+    actorUserId: string,
+    requestId: string,
+    input: BookingCancellationInput,
+  ): Promise<BookingCancellationResult>;
+  listMessages(
+    actorUserId: string,
+    requestId: string,
+    query: BookingMessagesListQuery,
+  ): Promise<BookingMessagePage | undefined>;
+  sendMessage(
+    actorUserId: string,
+    requestId: string,
+    input: BookingMessageInput,
+  ): Promise<BookingMessageDto | undefined>;
   listNotifications(
     recipientUserId: string,
     query: NotificationListQuery,
@@ -200,6 +234,17 @@ function toBookingRequestDto(
     budgetMaxAmountPaise: request.budgetMaxAmountPaise,
     additionalNotes: request.additionalNotes,
     status: request.status,
+    cancellation:
+      request.cancelledAt && request.cancelledByUserId
+        ? {
+            cancelledAt: request.cancelledAt.toISOString(),
+            cancelledByRole:
+              request.cancelledByUserId === request.customerUserId
+                ? "customer"
+                : "professional",
+            reason: request.cancellationReason,
+          }
+        : null,
     statusHistory: history.map((entry) => ({
       id: entry.id,
       previousStatus: entry.previousStatus,
@@ -225,6 +270,21 @@ function toNotificationDto(
     bookingRequestId: notification.bookingRequestId,
     createdAt: notification.createdAt.toISOString(),
     readAt: notification.readAt?.toISOString() ?? null,
+    messageId: notification.messageId,
+  });
+}
+
+function toMessageDto(
+  message: typeof messages.$inferSelect,
+  customerUserId: string,
+): BookingMessageDto {
+  return bookingMessageDtoSchema.parse({
+    id: message.id,
+    senderRole:
+      message.senderUserId === customerUserId ? "customer" : "professional",
+    body: message.body,
+    createdAt: message.createdAt.toISOString(),
+    readAt: message.readAt?.toISOString() ?? null,
   });
 }
 
@@ -405,6 +465,9 @@ export class PostgresBookingRequestRepository implements BookingRequestRepositor
           throw new Error("Booking request insert returned no record");
         }
 
+        await transaction.insert(conversations).values({
+          bookingRequestId: created.id,
+        });
         await transaction.insert(bookingStatusHistory).values({
           bookingRequestId: created.id,
           previousStatus: null,
@@ -555,6 +618,20 @@ export class PostgresBookingRequestRepository implements BookingRequestRepositor
     decision: "accepted" | "declined",
   ): Promise<BookingDecisionResult> {
     return this.database.transaction(async (transaction) => {
+      const [request] = await transaction
+        .select()
+        .from(bookingRequests)
+        .where(
+          and(
+            eq(bookingRequests.id, requestId),
+            eq(bookingRequests.professionalUserId, professionalUserId),
+          ),
+        )
+        .for("update");
+      if (!request) {
+        return { type: "missing" };
+      }
+
       const [professional] = await transaction
         .select({ id: users.id })
         .from(users)
@@ -581,19 +658,6 @@ export class PostgresBookingRequestRepository implements BookingRequestRepositor
         return { type: "professional_ineligible" };
       }
 
-      const [request] = await transaction
-        .select()
-        .from(bookingRequests)
-        .where(
-          and(
-            eq(bookingRequests.id, requestId),
-            eq(bookingRequests.professionalUserId, professionalUserId),
-          ),
-        )
-        .for("update");
-      if (!request) {
-        return { type: "missing" };
-      }
       if (request.status === decision) {
         return {
           type: "success",
@@ -651,6 +715,231 @@ export class PostgresBookingRequestRepository implements BookingRequestRepositor
             .orderBy(bookingStatusHistory.createdAt, bookingStatusHistory.id),
         ),
       };
+    });
+  }
+
+  async cancelRequest(
+    actorUserId: string,
+    requestId: string,
+    input: BookingCancellationInput,
+  ): Promise<BookingCancellationResult> {
+    return this.database.transaction(async (transaction) => {
+      const [request] = await transaction
+        .select()
+        .from(bookingRequests)
+        .where(eq(bookingRequests.id, requestId))
+        .for("update");
+      if (!request) {
+        return { type: "missing" };
+      }
+
+      const [actor] = await transaction
+        .select({ role: users.role, status: users.status })
+        .from(users)
+        .where(eq(users.id, actorUserId))
+        .for("update");
+      if (!actor || actor.status !== "active") {
+        return { type: "actor_ineligible" };
+      }
+
+      const isCustomer =
+        actor.role === "customer" && request.customerUserId === actorUserId;
+      const isProfessional =
+        actor.role === "professional" &&
+        request.professionalUserId === actorUserId;
+      if (!isCustomer && !isProfessional) {
+        return { type: "missing" };
+      }
+      const allowed = isCustomer
+        ? request.status === "requested" || request.status === "accepted"
+        : isProfessional && request.status === "accepted";
+      if (!allowed) {
+        return { type: "conflict" };
+      }
+
+      const now = new Date();
+      const [updated] = await transaction
+        .update(bookingRequests)
+        .set({
+          status: "cancelled",
+          cancelledAt: now,
+          cancelledByUserId: actorUserId,
+          cancellationReason: input.reason ?? null,
+          updatedAt: now,
+        })
+        .where(
+          and(
+            eq(bookingRequests.id, requestId),
+            eq(bookingRequests.status, request.status),
+          ),
+        )
+        .returning();
+      if (!updated) {
+        return { type: "conflict" };
+      }
+
+      await transaction.insert(bookingStatusHistory).values({
+        bookingRequestId: updated.id,
+        previousStatus: request.status,
+        newStatus: "cancelled",
+        actorUserId,
+        reason: input.reason ?? null,
+      });
+      await transaction.insert(notifications).values({
+        recipientUserId: isCustomer
+          ? updated.professionalUserId
+          : updated.customerUserId,
+        type: "booking_request_cancelled",
+        bookingRequestId: updated.id,
+      });
+      const history = await transaction
+        .select()
+        .from(bookingStatusHistory)
+        .where(eq(bookingStatusHistory.bookingRequestId, updated.id))
+        .orderBy(bookingStatusHistory.createdAt, bookingStatusHistory.id);
+      return {
+        type: "success",
+        bookingRequest: toBookingRequestDto(updated, history),
+      };
+    });
+  }
+
+  async listMessages(
+    actorUserId: string,
+    requestId: string,
+    query: BookingMessagesListQuery,
+  ): Promise<BookingMessagePage | undefined> {
+    return this.database.transaction(async (transaction) => {
+      const [request] = await transaction
+        .select({
+          id: bookingRequests.id,
+          customerUserId: bookingRequests.customerUserId,
+          professionalUserId: bookingRequests.professionalUserId,
+        })
+        .from(bookingRequests)
+        .where(eq(bookingRequests.id, requestId))
+        .limit(1);
+      if (
+        !request ||
+        (request.customerUserId !== actorUserId &&
+          request.professionalUserId !== actorUserId)
+      ) {
+        return undefined;
+      }
+
+      await transaction
+        .insert(conversations)
+        .values({ bookingRequestId: request.id })
+        .onConflictDoNothing({ target: conversations.bookingRequestId });
+      const [conversation] = await transaction
+        .select({ id: conversations.id })
+        .from(conversations)
+        .where(eq(conversations.bookingRequestId, request.id))
+        .limit(1);
+      if (!conversation) {
+        throw new Error("Booking conversation could not be loaded");
+      }
+
+      const [countRow, pageRows] = await Promise.all([
+        transaction
+          .select({ total: count() })
+          .from(messages)
+          .where(eq(messages.conversationId, conversation.id)),
+        transaction
+          .select()
+          .from(messages)
+          .where(eq(messages.conversationId, conversation.id))
+          .orderBy(desc(messages.createdAt), desc(messages.id))
+          .limit(query.pageSize)
+          .offset((query.page - 1) * query.pageSize),
+      ]);
+      const pageIds = pageRows.map((message) => message.id);
+      const now = new Date();
+      const readRows = pageIds.length
+        ? await transaction
+            .update(messages)
+            .set({ readAt: now })
+            .where(
+              and(
+                inArray(messages.id, pageIds),
+                ne(messages.senderUserId, actorUserId),
+                isNull(messages.readAt),
+              ),
+            )
+            .returning({ id: messages.id })
+        : [];
+      const newlyReadIds = new Set(readRows.map((row) => row.id));
+      const resultRows = pageRows
+        .map((message) =>
+          newlyReadIds.has(message.id) ? { ...message, readAt: now } : message,
+        )
+        .reverse();
+      return {
+        messages: resultRows.map((message) =>
+          toMessageDto(message, request.customerUserId),
+        ),
+        total: countRow[0]?.total ?? 0,
+      };
+    });
+  }
+
+  async sendMessage(
+    actorUserId: string,
+    requestId: string,
+    input: BookingMessageInput,
+  ): Promise<BookingMessageDto | undefined> {
+    return this.database.transaction(async (transaction) => {
+      const [request] = await transaction
+        .select({
+          id: bookingRequests.id,
+          customerUserId: bookingRequests.customerUserId,
+          professionalUserId: bookingRequests.professionalUserId,
+        })
+        .from(bookingRequests)
+        .where(eq(bookingRequests.id, requestId))
+        .limit(1);
+      if (
+        !request ||
+        (request.customerUserId !== actorUserId &&
+          request.professionalUserId !== actorUserId)
+      ) {
+        return undefined;
+      }
+
+      await transaction
+        .insert(conversations)
+        .values({ bookingRequestId: request.id })
+        .onConflictDoNothing({ target: conversations.bookingRequestId });
+      const [conversation] = await transaction
+        .select({ id: conversations.id })
+        .from(conversations)
+        .where(eq(conversations.bookingRequestId, request.id))
+        .limit(1);
+      if (!conversation) {
+        throw new Error("Booking conversation could not be loaded");
+      }
+
+      const [created] = await transaction
+        .insert(messages)
+        .values({
+          conversationId: conversation.id,
+          senderUserId: actorUserId,
+          body: input.body,
+        })
+        .returning();
+      if (!created) {
+        throw new Error("Booking message insert returned no record");
+      }
+      await transaction.insert(notifications).values({
+        recipientUserId:
+          actorUserId === request.customerUserId
+            ? request.professionalUserId
+            : request.customerUserId,
+        type: "booking_message_received",
+        bookingRequestId: request.id,
+        messageId: created.id,
+      });
+      return toMessageDto(created, request.customerUserId);
     });
   }
 

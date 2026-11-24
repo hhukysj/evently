@@ -1,8 +1,16 @@
 import {
+  bookingCancellationInputSchema,
+  bookingMessageDtoSchema,
+  bookingMessageInputSchema,
+  bookingMessageListDtoSchema,
+  bookingMessagesListQuerySchema,
   bookingRequestCreationInputSchema,
   bookingRequestDtoSchema,
   type BookingRequestCreationInput,
   type BookingRequestDto,
+  type BookingCancellationInput,
+  type BookingMessageDto,
+  type BookingMessageInput,
 } from "@evently/shared";
 
 export class BookingApiError extends Error {
@@ -76,6 +84,14 @@ function parseBookingRequest(value: unknown): BookingRequestDto {
       "The server returned an invalid booking request.",
       502,
     );
+  }
+  return result.data;
+}
+
+function parseBookingMessage(value: unknown): BookingMessageDto {
+  const result = bookingMessageDtoSchema.safeParse(value);
+  if (!result.success) {
+    throw new BookingApiError("The server returned an invalid message.", 502);
   }
   return result.data;
 }
@@ -187,4 +203,97 @@ export async function decideBookingRequest(
     );
   }
   return parseBookingRequest(data.bookingRequest);
+}
+
+export async function cancelBookingRequest(
+  requestId: string,
+  input: BookingCancellationInput = {},
+): Promise<BookingRequestDto> {
+  const parsed = bookingCancellationInputSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new BookingApiError("Please correct the cancellation reason.", 400);
+  }
+  const csrfData = await requestJson("/api/v1/auth/csrf");
+  if (!isRecord(csrfData) || typeof csrfData.csrfToken !== "string") {
+    throw new BookingApiError("Could not prepare a secure request.", 502);
+  }
+  const data = await requestJson(
+    `/api/v1/bookings/${encodeURIComponent(requestId)}/cancel`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": csrfData.csrfToken,
+      },
+      body: JSON.stringify(parsed.data),
+    },
+  );
+  if (!isRecord(data)) {
+    throw new BookingApiError(
+      "The server returned an invalid booking request.",
+      502,
+    );
+  }
+  return parseBookingRequest(data.bookingRequest);
+}
+
+export async function fetchBookingMessages(
+  requestId: string,
+  page: number,
+  signal?: AbortSignal,
+): Promise<{ messages: BookingMessageDto[]; total: number }> {
+  const parsedQuery = bookingMessagesListQuerySchema.safeParse({
+    page,
+    pageSize: 25,
+  });
+  if (!parsedQuery.success) {
+    throw new BookingApiError("Invalid message page.", 400);
+  }
+  const data = await requestJson(
+    `/api/v1/bookings/${encodeURIComponent(requestId)}/messages?page=${parsedQuery.data.page}&pageSize=${parsedQuery.data.pageSize}`,
+    { ...(signal ? { signal } : {}) },
+  );
+  const parsedPage = bookingMessageListDtoSchema.safeParse(data);
+  if (!parsedPage.success) {
+    throw new BookingApiError(
+      "The server returned an invalid message list.",
+      502,
+    );
+  }
+  return {
+    messages: parsedPage.data.messages,
+    total: parsedPage.data.pagination.total,
+  };
+}
+
+export async function sendBookingMessage(
+  requestId: string,
+  input: BookingMessageInput,
+): Promise<BookingMessageDto> {
+  const parsed = bookingMessageInputSchema.safeParse(input);
+  if (!parsed.success) {
+    throw new BookingApiError(
+      "Message must be between 1 and 2000 characters.",
+      400,
+    );
+  }
+  const csrfData = await requestJson("/api/v1/auth/csrf");
+  if (!isRecord(csrfData) || typeof csrfData.csrfToken !== "string") {
+    throw new BookingApiError("Could not prepare a secure request.", 502);
+  }
+  const data = await requestJson(
+    `/api/v1/bookings/${encodeURIComponent(requestId)}/messages`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-CSRF-Token": csrfData.csrfToken,
+      },
+      body: JSON.stringify(parsed.data),
+    },
+  );
+  if (!isRecord(data)) {
+    throw new BookingApiError("The server returned an invalid message.", 502);
+  }
+  return parseBookingMessage(data.message);
 }

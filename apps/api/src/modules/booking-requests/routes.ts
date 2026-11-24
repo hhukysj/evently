@@ -1,4 +1,7 @@
 import {
+  bookingCancellationInputSchema,
+  bookingMessageInputSchema,
+  bookingMessagesListQuerySchema,
   bookingRequestCreationInputSchema,
   customerBookingRequestListQuerySchema,
   markNotificationReadInputSchema,
@@ -477,6 +480,155 @@ export function createNotificationRouter(
         if (handleConstraintError(error, response)) {
           return;
         }
+        next(error);
+      }
+    },
+  );
+  return router;
+}
+
+export function createBookingLifecycleRouter(
+  configuration: BookingRouteConfiguration,
+) {
+  const router = Router();
+  commonMiddleware(router, configuration);
+  const csrf = createCsrfMiddleware(configuration.appOrigin);
+
+  router.post(
+    "/:requestId/cancel",
+    routeRateLimit(configuration, "booking-cancel", 30),
+    csrf,
+    async (request, response, next) => {
+      const requestId = parseRequestId(request, response);
+      if (!requestId) return;
+      const parsed = bookingCancellationInputSchema.safeParse(request.body);
+      if (!parsed.success) {
+        sendError(
+          response,
+          400,
+          "INVALID_REQUEST",
+          "Provide a valid cancellation reason or an empty object",
+        );
+        return;
+      }
+      try {
+        const result = await configuration.bookingService.cancelRequest(
+          (response.locals.authUser as AuthUser).id,
+          requestId,
+          parsed.data,
+        );
+        if (result.type === "missing") {
+          sendError(
+            response,
+            404,
+            "BOOKING_REQUEST_NOT_FOUND",
+            "Booking request was not found",
+          );
+          return;
+        }
+        if (result.type === "actor_ineligible") {
+          sendError(
+            response,
+            403,
+            "BOOKING_ACTOR_NOT_ELIGIBLE",
+            "An active booking participant account is required",
+          );
+          return;
+        }
+        if (result.type === "conflict") {
+          sendError(
+            response,
+            409,
+            "BOOKING_LIFECYCLE_CONFLICT",
+            "This booking request can no longer be cancelled in its current state",
+          );
+          return;
+        }
+        response.json({ data: { bookingRequest: result.bookingRequest } });
+      } catch (error) {
+        if (handleConstraintError(error, response)) return;
+        next(error);
+      }
+    },
+  );
+
+  router.get(
+    "/:requestId/messages",
+    routeRateLimit(configuration, "booking-message-list", 120),
+    async (request, response, next) => {
+      const requestId = parseRequestId(request, response);
+      if (!requestId) return;
+      const parsed = bookingMessagesListQuerySchema.safeParse(request.query);
+      if (!parsed.success) {
+        sendError(response, 400, "INVALID_REQUEST", "Invalid message filters");
+        return;
+      }
+      try {
+        const page = await configuration.bookingService.listMessages(
+          (response.locals.authUser as AuthUser).id,
+          requestId,
+          parsed.data,
+        );
+        if (!page) {
+          sendError(
+            response,
+            404,
+            "BOOKING_REQUEST_NOT_FOUND",
+            "Booking request was not found",
+          );
+          return;
+        }
+        response.json({
+          data: {
+            messages: page.messages,
+            pagination: {
+              page: parsed.data.page,
+              pageSize: parsed.data.pageSize,
+              total: page.total,
+            },
+          },
+        });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/:requestId/messages",
+    routeRateLimit(configuration, "booking-message-send", 30),
+    csrf,
+    async (request, response, next) => {
+      const requestId = parseRequestId(request, response);
+      if (!requestId) return;
+      const parsed = bookingMessageInputSchema.safeParse(request.body);
+      if (!parsed.success) {
+        sendError(
+          response,
+          400,
+          "INVALID_REQUEST",
+          "Message must contain between 1 and 2000 characters",
+        );
+        return;
+      }
+      try {
+        const message = await configuration.bookingService.sendMessage(
+          (response.locals.authUser as AuthUser).id,
+          requestId,
+          parsed.data,
+        );
+        if (!message) {
+          sendError(
+            response,
+            404,
+            "BOOKING_REQUEST_NOT_FOUND",
+            "Booking request was not found",
+          );
+          return;
+        }
+        response.status(201).json({ data: { message } });
+      } catch (error) {
+        if (handleConstraintError(error, response)) return;
         next(error);
       }
     },

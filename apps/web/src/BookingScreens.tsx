@@ -1,16 +1,26 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type FormEvent,
+} from "react";
 import {
   bookingRequestCreationInputSchema,
   type BookingRequestCreationInput,
   type BookingRequestDto,
+  type BookingMessageDto,
 } from "@evently/shared";
 import type { CurrentUser } from "./auth-api.js";
 import {
   BookingApiError,
+  cancelBookingRequest,
   createBookingRequest,
   decideBookingRequest,
+  fetchBookingMessages,
   fetchCustomerBookingRequests,
   fetchProfessionalBookingRequests,
+  sendBookingMessage,
 } from "./booking-requests-api.js";
 
 type BriefFields = {
@@ -119,6 +129,9 @@ function errorText(error: unknown): string {
   if (error.code === "IDEMPOTENCY_KEY_REUSED") {
     return "This key was used for different details. A new request key is ready; review the brief and submit again.";
   }
+  if (error.code === "BOOKING_LIFECYCLE_CONFLICT") {
+    return "This request changed before the action completed. The latest status has been refreshed.";
+  }
   return error.message;
 }
 
@@ -137,6 +150,8 @@ function statusLabel(status: BookingRequestDto["status"]): string {
       return "Accepted by professional";
     case "declined":
       return "Declined by professional";
+    case "cancelled":
+      return "Cancelled";
   }
 }
 
@@ -688,9 +703,20 @@ function BookingRequestCard({ request: item }: { request: BookingRequestDto }) {
       {item.additionalNotes && (
         <p className="booking-notes">{item.additionalNotes}</p>
       )}
+      {item.cancellation && (
+        <p className="muted">
+          Cancelled by {item.cancellation.cancelledByRole} on{" "}
+          {new Date(item.cancellation.cancelledAt).toLocaleString()}.
+          {item.cancellation.reason
+            ? ` Reason: ${item.cancellation.reason}`
+            : ""}
+        </p>
+      )}
       {item.statusHistory.length > 1 && (
         <p className="muted">
-          Professional response recorded{" "}
+          {item.status === "cancelled"
+            ? "Cancellation recorded "
+            : "Professional response recorded "}
           {new Date(
             item.statusHistory[item.statusHistory.length - 1]!.createdAt,
           ).toLocaleString()}
@@ -698,6 +724,220 @@ function BookingRequestCard({ request: item }: { request: BookingRequestDto }) {
         </p>
       )}
     </article>
+  );
+}
+
+function BookingConversation({
+  requestId,
+  currentRole,
+}: {
+  requestId: string;
+  currentRole: "customer" | "professional";
+}) {
+  const [page, setPage] = useState(1);
+  const [revision, setRevision] = useState(0);
+  const [pages, setPages] = useState<
+    Record<string, { messages: BookingMessageDto[]; total: number }>
+  >({});
+  const [loadResult, setLoadResult] = useState<{
+    key: string;
+    status: "loading" | "error" | "success";
+    error?: string;
+    total?: number;
+  }>({ key: "", status: "loading" });
+  const [body, setBody] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState("");
+  const [sendMessageStatus, setSendMessageStatus] = useState("");
+  const sendingRef = useRef(false);
+  const pageKey = `${requestId}:${page}`;
+  const loadKey = `${pageKey}:${revision}`;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchBookingMessages(requestId, page, controller.signal)
+      .then((result) => {
+        if (!controller.signal.aborted) {
+          setPages((current) => ({ ...current, [pageKey]: result }));
+          setLoadResult({
+            key: loadKey,
+            status: "success",
+            total: result.total,
+          });
+        }
+      })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) {
+          setLoadResult({
+            key: loadKey,
+            status: "error",
+            error:
+              reason instanceof Error
+                ? reason.message
+                : "Messages could not be loaded.",
+          });
+        }
+      });
+    return () => controller.abort();
+  }, [loadKey, page, pageKey, requestId]);
+
+  const loadedPages = Object.entries(pages)
+    .filter(([key]) => key.startsWith(`${requestId}:`))
+    .sort(([left], [right]) => {
+      const leftPage = Number(left.slice(requestId.length + 1));
+      const rightPage = Number(right.slice(requestId.length + 1));
+      return rightPage - leftPage;
+    });
+  const visibleMessages = loadedPages.flatMap(([, result]) => result.messages);
+  const total =
+    loadResult.key === loadKey
+      ? (loadResult.total ?? pages[pageKey]?.total ?? 0)
+      : (pages[pageKey]?.total ?? pages[`${requestId}:1`]?.total ?? 0);
+  const pageCount = Math.max(1, Math.ceil(total / 25));
+
+  async function send(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (sendingRef.current || !body.trim()) return;
+    sendingRef.current = true;
+    setSending(true);
+    setSendError("");
+    setSendMessageStatus("");
+    try {
+      const created = await sendBookingMessage(requestId, { body });
+      setPages((current) => {
+        const firstPage = current[`${requestId}:1`];
+        const existing = firstPage?.messages ?? [];
+        return {
+          ...current,
+          [`${requestId}:1`]: {
+            messages: [...existing, created].sort(
+              (left, right) =>
+                Date.parse(left.createdAt) - Date.parse(right.createdAt) ||
+                left.id.localeCompare(right.id),
+            ),
+            total: (firstPage?.total ?? total) + 1,
+          },
+        };
+      });
+      setBody("");
+      setSendMessageStatus("Message sent.");
+      if (page !== 1) setPage(1);
+    } catch (reason) {
+      setSendError(errorText(reason));
+    } finally {
+      sendingRef.current = false;
+      setSending(false);
+    }
+  }
+
+  return (
+    <section className="booking-conversation" aria-label="Booking conversation">
+      <div className="booking-list-heading">
+        <h4>Messages</h4>
+        <button
+          className="button button-secondary button-small"
+          disabled={
+            loadResult.key === loadKey && loadResult.status === "loading"
+          }
+          onClick={() => setRevision((value) => value + 1)}
+          type="button"
+        >
+          Refresh messages
+        </button>
+      </div>
+      {loadResult.key !== loadKey || loadResult.status === "loading" ? (
+        <p className="muted" role="status">
+          Loading messages…
+        </p>
+      ) : loadResult.status === "error" ? (
+        <>
+          <p className="form-error" role="alert">
+            {loadResult.error}
+          </p>
+          <button
+            className="button button-secondary"
+            onClick={() => setRevision((value) => value + 1)}
+            type="button"
+          >
+            Retry messages
+          </button>
+        </>
+      ) : null}
+      {loadResult.status !== "error" &&
+        visibleMessages.length === 0 &&
+        loadResult.key === loadKey &&
+        loadResult.status === "success" && (
+          <p className="muted">
+            No messages yet. Send a message to continue the conversation.
+          </p>
+        )}
+      {visibleMessages.length > 0 && (
+        <ol
+          className="booking-message-list"
+          aria-label="Conversation messages"
+          aria-live="polite"
+        >
+          {visibleMessages.map((message) => (
+            <li className="booking-message" key={message.id}>
+              <div className="booking-message-heading">
+                <strong>
+                  {message.senderRole === currentRole
+                    ? "You"
+                    : message.senderRole === "customer"
+                      ? "Customer"
+                      : "Professional"}
+                </strong>
+                <time dateTime={message.createdAt}>
+                  {new Date(message.createdAt).toLocaleString()}
+                </time>
+              </div>
+              <p>{message.body}</p>
+            </li>
+          ))}
+        </ol>
+      )}
+      {page < pageCount && (
+        <button
+          className="button button-secondary"
+          disabled={loadResult.status === "loading"}
+          onClick={() => setPage((value) => value + 1)}
+          type="button"
+        >
+          Load earlier messages
+        </button>
+      )}
+      <form
+        className="booking-message-form"
+        onSubmit={(event) => void send(event)}
+      >
+        <label htmlFor={`booking-message-${requestId}`}>Write a message</label>
+        <textarea
+          id={`booking-message-${requestId}`}
+          maxLength={2000}
+          onChange={(event) => setBody(event.currentTarget.value)}
+          required
+          rows={3}
+          value={body}
+        />
+        {sendError && (
+          <p className="form-error" role="alert">
+            {sendError}
+          </p>
+        )}
+        {sendMessageStatus && (
+          <p className="form-success" role="status">
+            {sendMessageStatus}
+          </p>
+        )}
+        <button
+          className="button"
+          disabled={sending || !body.trim()}
+          type="submit"
+        >
+          {sending ? "Sending…" : "Send message"}
+        </button>
+      </form>
+    </section>
   );
 }
 
@@ -713,6 +953,7 @@ function BookingRequestList({
   const [page, setPage] = useState(1);
   const [revision, setRevision] = useState(0);
   const [pendingId, setPendingId] = useState("");
+  const [cancelConfirmationId, setCancelConfirmationId] = useState("");
   const [actionError, setActionError] = useState("");
   const [actionMessage, setActionMessage] = useState("");
   const authorized = !userLoading && user?.role === role;
@@ -733,6 +974,28 @@ function BookingRequestList({
       setRevision((value) => value + 1);
     } catch (reason) {
       setActionError(errorText(reason));
+    } finally {
+      setPendingId("");
+    }
+  }
+
+  async function cancel(requestId: string) {
+    setPendingId(requestId);
+    setActionError("");
+    setActionMessage("");
+    try {
+      await cancelBookingRequest(requestId);
+      setCancelConfirmationId("");
+      setActionMessage(
+        "Booking cancelled. The other participant has been notified.",
+      );
+      setRevision((value) => value + 1);
+    } catch (reason) {
+      setActionError(errorText(reason));
+      if (reason instanceof BookingApiError && reason.status === 409) {
+        setCancelConfirmationId("");
+        setRevision((value) => value + 1);
+      }
     } finally {
       setPendingId("");
     }
@@ -867,6 +1130,58 @@ function BookingRequestList({
                     Decline request
                   </button>
                 </div>
+              )}
+              {((role === "customer" &&
+                (item.status === "requested" || item.status === "accepted")) ||
+                (role === "professional" && item.status === "accepted")) && (
+                <div className="booking-cancellation">
+                  {cancelConfirmationId === item.id ? (
+                    <div
+                      className="booking-cancel-confirmation"
+                      role="group"
+                      aria-label="Confirm booking cancellation"
+                    >
+                      <p>
+                        This will mark the request as cancelled and notify the
+                        other participant. They will no longer be able to accept
+                        or decline it. The event brief and conversation will
+                        remain available.
+                      </p>
+                      <div className="booking-actions">
+                        <button
+                          className="button button-danger"
+                          disabled={pendingId !== ""}
+                          onClick={() => void cancel(item.id)}
+                          type="button"
+                        >
+                          {pendingId === item.id
+                            ? "Cancelling…"
+                            : "Confirm cancellation"}
+                        </button>
+                        <button
+                          className="button button-secondary"
+                          disabled={pendingId !== ""}
+                          onClick={() => setCancelConfirmationId("")}
+                          type="button"
+                        >
+                          Keep request
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      className="button button-secondary"
+                      disabled={pendingId !== ""}
+                      onClick={() => setCancelConfirmationId(item.id)}
+                      type="button"
+                    >
+                      Cancel booking
+                    </button>
+                  )}
+                </div>
+              )}
+              {user && (
+                <BookingConversation requestId={item.id} currentRole={role} />
               )}
             </div>
           ))}

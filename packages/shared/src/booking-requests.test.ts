@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  bookingCancellationInputSchema,
+  bookingMessageInputSchema,
+  bookingMessagesListQuerySchema,
   bookingRequestCreationInputSchema,
   bookingRequestDtoSchema,
 } from "./booking-requests.js";
@@ -127,11 +130,16 @@ describe("booking request contracts", () => {
       budgetMaxAmountPaise: null,
       additionalNotes: null,
       status: "requested",
+      cancellation: null,
       statusHistory: [],
       createdAt: "2026-11-13T00:00:00.000Z",
       updatedAt: "2026-11-13T00:00:00.000Z",
     };
     expect(bookingRequestDtoSchema.safeParse(dto).success).toBe(true);
+    expect(
+      bookingRequestDtoSchema.safeParse({ ...dto, status: "cancelled" })
+        .success,
+    ).toBe(false);
     expect(
       bookingRequestDtoSchema.safeParse({
         ...dto,
@@ -144,6 +152,40 @@ describe("booking request contracts", () => {
         ...dto,
         budgetMinAmountPaise: -1,
       }).success,
+    ).toBe(false);
+  });
+
+  it("validates cancellation reasons and bounded message pagination", () => {
+    expect(bookingCancellationInputSchema.safeParse({}).success).toBe(true);
+    expect(
+      bookingCancellationInputSchema.safeParse({ reason: "Changed plans" })
+        .success,
+    ).toBe(true);
+    expect(
+      bookingCancellationInputSchema.safeParse({ reason: "   " }).success,
+    ).toBe(false);
+    expect(
+      bookingCancellationInputSchema.safeParse({ unexpected: true }).success,
+    ).toBe(false);
+
+    expect(
+      bookingMessagesListQuerySchema.parse({ page: "2", pageSize: "50" }),
+    ).toEqual({ page: 2, pageSize: 50 });
+    expect(
+      bookingMessagesListQuerySchema.safeParse({ page: 1, pageSize: 51 })
+        .success,
+    ).toBe(false);
+    expect(
+      bookingMessageInputSchema.safeParse({ body: "  Hello  " }),
+    ).toMatchObject({
+      success: true,
+      data: { body: "Hello" },
+    });
+    expect(bookingMessageInputSchema.safeParse({ body: "   " }).success).toBe(
+      false,
+    );
+    expect(
+      bookingMessageInputSchema.safeParse({ body: "x".repeat(2001) }).success,
     ).toBe(false);
   });
 });

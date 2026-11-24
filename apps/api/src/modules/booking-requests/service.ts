@@ -1,4 +1,7 @@
 import type {
+  BookingCancellationInput,
+  BookingMessageInput,
+  BookingMessagesListQuery,
   BookingRequestCreationInput,
   CustomerBookingRequestListQuery,
   NotificationListQuery,
@@ -6,6 +9,7 @@ import type {
 } from "@evently/shared";
 import type {
   BookingDecisionResult,
+  BookingCancellationResult,
   BookingRequestRepository,
 } from "./repository.js";
 
@@ -35,6 +39,21 @@ export interface BookingService {
     requestId: string,
     decision: "accepted" | "declined",
   ): Promise<BookingDecisionResult>;
+  cancelRequest(
+    actorUserId: string,
+    requestId: string,
+    input: BookingCancellationInput,
+  ): Promise<BookingCancellationResult>;
+  listMessages(
+    actorUserId: string,
+    requestId: string,
+    query: BookingMessagesListQuery,
+  ): ReturnType<BookingRequestRepository["listMessages"]>;
+  sendMessage(
+    actorUserId: string,
+    requestId: string,
+    input: BookingMessageInput,
+  ): ReturnType<BookingRequestRepository["sendMessage"]>;
   listNotifications(
     recipientUserId: string,
     query: NotificationListQuery,
@@ -80,6 +99,30 @@ export class MarketplaceBookingService implements BookingService {
     decision: "accepted" | "declined",
   ) {
     return this.bookings.decideRequest(professionalUserId, requestId, decision);
+  }
+
+  cancelRequest(
+    actorUserId: string,
+    requestId: string,
+    input: BookingCancellationInput,
+  ) {
+    return this.bookings.cancelRequest(actorUserId, requestId, input);
+  }
+
+  listMessages(
+    actorUserId: string,
+    requestId: string,
+    query: BookingMessagesListQuery,
+  ) {
+    return this.bookings.listMessages(actorUserId, requestId, query);
+  }
+
+  sendMessage(
+    actorUserId: string,
+    requestId: string,
+    input: BookingMessageInput,
+  ) {
+    return this.bookings.sendMessage(actorUserId, requestId, input);
   }
 
   listNotifications(recipientUserId: string, query: NotificationListQuery) {

@@ -71,6 +71,13 @@
       "when": 1794441600000,
       "tag": "0009_evently_booking_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795564800000,
+      "tag": "0010_booking_cancellation_conversations",
+      "breakpoints": true
     }
   ]
 }
