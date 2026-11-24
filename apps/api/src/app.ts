@@ -27,6 +27,12 @@ import {
   createPublicServiceListingRouter,
 } from "./modules/service-listings/routes.js";
 import type { ServiceListingService } from "./modules/service-listings/service.js";
+import {
+  createCustomerBookingRequestRouter,
+  createNotificationRouter,
+  createProfessionalBookingRequestRouter,
+} from "./modules/booking-requests/routes.js";
+import type { BookingService } from "./modules/booking-requests/service.js";
 
 export interface DatabaseProbe {
   query: (query: "SELECT 1") => Promise<unknown>;
@@ -36,6 +42,7 @@ export interface AuthAppConfiguration {
   service: AuthService;
   providerService?: ProviderService;
   serviceListingService?: ServiceListingService;
+  bookingService?: BookingService;
   environment: "development" | "test" | "production";
   developmentEmailInbox?: DevelopmentEmailInbox;
   sessionStore: session.Store;
@@ -174,6 +181,28 @@ export function createApp(
         createPublicServiceListingRouter(listingRouteConfiguration),
       );
     }
+    if (authConfiguration.bookingService) {
+      const bookingRouteConfiguration = {
+        authService: authConfiguration.service,
+        bookingService: authConfiguration.bookingService,
+        appOrigin: authConfiguration.appOrigin,
+        cookieName: authConfiguration.cookieName,
+        secureCookies: authConfiguration.secureCookies,
+        rateLimitStoreFactory: authConfiguration.rateLimitStoreFactory,
+      };
+      authApi.use(
+        "/booking-requests",
+        createCustomerBookingRequestRouter(bookingRouteConfiguration),
+      );
+      authApi.use(
+        "/professional/booking-requests",
+        createProfessionalBookingRequestRouter(bookingRouteConfiguration),
+      );
+      authApi.use(
+        "/notifications",
+        createNotificationRouter(bookingRouteConfiguration),
+      );
+    }
     if (authConfiguration.providerService) {
       const providerRouteConfiguration = {
         authService: authConfiguration.service,
@@ -233,6 +262,15 @@ export function createApp(
       requestId: id,
       errorName: error instanceof Error ? error.name : "UnknownError",
     });
+    if (
+      authConfiguration?.environment === "test" &&
+      error instanceof TypeError
+    ) {
+      const stackFrames = error.stack?.split("\n").slice(1);
+      if (stackFrames?.length) {
+        console.error("Unhandled API TypeError stack frames", { stackFrames });
+      }
+    }
     const status =
       typeof error === "object" &&
       error !== null &&

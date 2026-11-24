@@ -11,7 +11,8 @@
     "build": "tsc -p tsconfig.json",
     "db:verify-test-target": "tsx src/testing/verify-integration-database.ts",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:migrate:integration": "node scripts/migrate-integration.mjs"
   },
   "dependencies": {
     "@evently/shared": "*",

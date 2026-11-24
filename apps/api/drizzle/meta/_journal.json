@@ -64,6 +64,13 @@
       "when": 1793624473237,
       "tag": "0008_heavy_the_spike",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794441600000,
+      "tag": "0009_evently_booking_foundation",
+      "breakpoints": true
     }
   ]
 }

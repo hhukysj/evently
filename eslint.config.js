@@ -33,6 +33,12 @@ export default tseslint.config(
     },
   },
   {
+    files: ["apps/api/scripts/migrate-integration.mjs"],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+  },
+  {
     files: ["e2e/**/*.ts", "playwright.config.ts"],
     languageOptions: {
       globals: { ...globals.node },

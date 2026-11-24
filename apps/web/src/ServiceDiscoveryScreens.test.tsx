@@ -246,7 +246,17 @@ describe("public service details", () => {
       "/services/example-id?city=Pune&page=2",
     );
 
-    render(<ServiceDetailScreen listingId={fixedListing.id} />);
+    render(
+      <ServiceDetailScreen
+        listingId={fixedListing.id}
+        user={{
+          id: "7528f841-005a-4da9-ad77-c48c8213e857",
+          email: "customer@example.test",
+          role: "customer",
+          createdAt: "2026-01-01T00:00:00.000Z",
+        }}
+      />,
+    );
 
     expect(
       await screen.findByRole("heading", { name: fixedListing.title }),
@@ -259,7 +269,9 @@ describe("public service details", () => {
         .getByRole("link", { name: "Back to service listings" })
         .getAttribute("href"),
     ).toBe("/services?city=Pune&page=2");
-    expect(screen.queryByRole("button", { name: /book|request/i })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Request booking" }),
+    ).toBeTruthy();
     expect(screen.queryByText(/moderation|reviewer|email|phone/i)).toBeNull();
   });
 

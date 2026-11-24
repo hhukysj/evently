@@ -7,6 +7,8 @@ import {
   fetchPublicServiceListing,
   PublicServiceListingApiError,
 } from "./public-service-listings-api.js";
+import type { CurrentUser } from "./auth-api.js";
+import { BookingRequestForm } from "./BookingScreens.js";
 
 type DetailRequestState =
   | { key: string; status: "loading" }
@@ -46,8 +48,20 @@ function detailErrorMessage(error: unknown): string {
     : "The service details could not be loaded. Please try again.";
 }
 
-export function ServiceDetailScreen({ listingId }: { listingId: string }) {
+export function ServiceDetailScreen({
+  listingId,
+  user = null,
+  userLoading = false,
+}: {
+  listingId: string;
+  user?: CurrentUser | null;
+  userLoading?: boolean;
+}) {
   const [revision, setRevision] = useState(0);
+  const [requestFormOpen, setRequestFormOpen] = useState(
+    () =>
+      new URLSearchParams(window.location.search).get("requestBooking") === "1",
+  );
   const requestKey = JSON.stringify([listingId, revision]);
   const [requestState, setRequestState] = useState<DetailRequestState>(() => ({
     key: requestKey,
@@ -64,6 +78,18 @@ export function ServiceDetailScreen({ listingId }: { listingId: string }) {
     visibleRequestState.status === "success"
       ? visibleRequestState.listing
       : null;
+
+  function closeRequestForm(): void {
+    setRequestFormOpen(false);
+    const query = new URLSearchParams(window.location.search);
+    query.delete("requestBooking");
+    const search = query.toString();
+    window.history.replaceState(
+      {},
+      "",
+      `${window.location.pathname}${search ? `?${search}` : ""}`,
+    );
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -141,7 +167,39 @@ export function ServiceDetailScreen({ listingId }: { listingId: string }) {
             {listing.description}
           </p>
           <p className="public-service-price">{priceText(listing)}</p>
+          {userLoading ? (
+            <p className="muted" role="status">
+              Checking your account…
+            </p>
+          ) : user?.role === "customer" ? (
+            <button
+              className="button"
+              onClick={() => setRequestFormOpen((open) => !open)}
+              type="button"
+            >
+              {requestFormOpen ? "Close request form" : "Request booking"}
+            </button>
+          ) : user ? (
+            <p className="muted">
+              Booking requests are available to customer accounts.
+            </p>
+          ) : (
+            <a
+              className="button"
+              href={`/login?returnTo=${encodeURIComponent(`${window.location.pathname}?requestBooking=1`)}`}
+            >
+              Sign in to request this service
+            </a>
+          )}
         </article>
+      )}
+      {!loading && !error && listing && requestFormOpen && (
+        <BookingRequestForm
+          key={listing.id}
+          customer={user}
+          listingId={listing.id}
+          onClose={closeRequestForm}
+        />
       )}
     </section>
   );

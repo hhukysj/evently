@@ -12,6 +12,8 @@ import { PostgresProviderRepository } from "./modules/providers/repository.js";
 import { MarketplaceProviderService } from "./modules/providers/service.js";
 import { PostgresServiceListingRepository } from "./modules/service-listings/repository.js";
 import { ServiceListingService } from "./modules/service-listings/service.js";
+import { PostgresBookingRequestRepository } from "./modules/booking-requests/repository.js";
+import { MarketplaceBookingService } from "./modules/booking-requests/service.js";
 import {
   createPostgresSessionStore,
   sessionCookieName,
@@ -41,6 +43,9 @@ const app = createApp(pool, {
   ),
   serviceListingService: new ServiceListingService(
     new PostgresServiceListingRepository(db),
+  ),
+  bookingService: new MarketplaceBookingService(
+    new PostgresBookingRequestRepository(db),
   ),
   sessionStore,
   sessionSecret: env.SESSION_SECRET,

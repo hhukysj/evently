@@ -15,6 +15,10 @@ import { ServiceListingsScreen } from "./ServiceListingsScreen.js";
 import { AdminServiceListingsScreen } from "./AdminServiceListingsScreen.js";
 import { ServiceDiscoveryScreen } from "./ServiceDiscoveryScreen.js";
 import { ServiceDetailScreen } from "./ServiceDetailScreen.js";
+import {
+  CustomerBookingRequestsScreen,
+  ProfessionalBookingRequestsScreen,
+} from "./BookingScreens.js";
 
 type AuthPage =
   | "home"
@@ -29,7 +33,9 @@ type AuthPage =
   | "professional-services"
   | "admin-service-listings"
   | "service-discovery"
-  | "service-detail";
+  | "service-detail"
+  | "customer-booking-requests"
+  | "professional-booking-requests";
 
 type AuthFlowPage = Extract<
   AuthPage,
@@ -65,8 +71,34 @@ function currentPage(): AuthPage {
       return "professional-services";
     case "/admin/service-listings":
       return "admin-service-listings";
+    case "/booking-requests":
+      return "customer-booking-requests";
+    case "/professional/booking-requests":
+      return "professional-booking-requests";
     default:
       return "home";
+  }
+}
+
+function safePostLoginPath(value: string | null): string | undefined {
+  if (!value || !value.startsWith("/") || value.startsWith("//")) {
+    return undefined;
+  }
+  try {
+    const target = new URL(value, window.location.origin);
+    if (target.origin !== window.location.origin) return undefined;
+    const isServiceReturn =
+      /^\/services\/[^/]+$/.test(target.pathname) &&
+      target.searchParams.get("requestBooking") === "1";
+    const isCustomerRequests = target.pathname === "/booking-requests";
+    const isProfessionalRequests =
+      target.pathname === "/professional/booking-requests";
+    if (!isServiceReturn && !isCustomerRequests && !isProfessionalRequests) {
+      return undefined;
+    }
+    return `${target.pathname}${target.search}`;
+  } catch {
+    return undefined;
   }
 }
 
@@ -151,12 +183,16 @@ export default function App() {
             <>
               <span className="signed-in">{user.email}</span>
               {user.role === "customer" && (
-                <a href="/provider/apply">Apply as a provider</a>
+                <>
+                  <a href="/booking-requests">My booking requests</a>
+                  <a href="/provider/apply">Apply as a provider</a>
+                </>
               )}
               {user.role === "professional" && (
                 <>
                   <a href="/professional/profile">Professional profile</a>
                   <a href="/professional/services">Manage services</a>
+                  <a href="/professional/booking-requests">Incoming requests</a>
                 </>
               )}
               {user.role === "admin" && (
@@ -212,7 +248,11 @@ export default function App() {
             <h1 id="page-title">
               {page === "home"
                 ? "Plan something worth remembering."
-                : "Evently"}
+                : page === "customer-booking-requests"
+                  ? "My booking requests"
+                  : page === "professional-booking-requests"
+                    ? "Incoming booking requests"
+                    : "Evently"}
             </h1>
             <p className="intro">
               A thoughtful place to plan events and connect with the people who
@@ -270,7 +310,23 @@ export default function App() {
         )}
         {page === "service-discovery" && <ServiceDiscoveryScreen />}
         {page === "service-detail" && (
-          <ServiceDetailScreen listingId={currentServiceListingId()} />
+          <ServiceDetailScreen
+            listingId={currentServiceListingId()}
+            user={user}
+            userLoading={userLoading}
+          />
+        )}
+        {page === "customer-booking-requests" && (
+          <CustomerBookingRequestsScreen
+            user={user}
+            userLoading={userLoading}
+          />
+        )}
+        {page === "professional-booking-requests" && (
+          <ProfessionalBookingRequestsScreen
+            user={user}
+            userLoading={userLoading}
+          />
         )}
         {page !== "home" &&
           page !== "provider-application" &&
@@ -279,7 +335,9 @@ export default function App() {
           page !== "professional-services" &&
           page !== "admin-service-listings" &&
           page !== "service-discovery" &&
-          page !== "service-detail" && (
+          page !== "service-detail" &&
+          page !== "customer-booking-requests" &&
+          page !== "professional-booking-requests" && (
             <AuthScreen
               key={`${page}-${authScreenRevision}`}
               onAuthenticated={setUser}
@@ -383,7 +441,14 @@ function AuthScreen({
                 password: value(form, "password"),
               });
               onAuthenticated(result.user);
-              setMessage(`You are signed in as ${result.user.email}.`);
+              const returnPath = safePostLoginPath(
+                new URLSearchParams(window.location.search).get("returnTo"),
+              );
+              if (returnPath) {
+                window.location.assign(returnPath);
+              } else {
+                setMessage(`You are signed in as ${result.user.email}.`);
+              }
             })
           }
         >
@@ -401,6 +466,10 @@ function AuthScreen({
         </form>
         <p className="auth-footer">
           <a href="/forgot-password">Forgot your password?</a>
+        </p>
+        <p className="auth-footer">
+          Need to verify your email?{" "}
+          <a href="/verify-email">Request a verification link</a>
         </p>
         <p className="auth-footer">
           Need an account? <a href="/register">Create one</a>

@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  date,
   index,
   integer,
   pgEnum,
@@ -70,6 +71,18 @@ export const serviceListingModerationStatusEnum = pgEnum(
   "service_listing_moderation_status",
   ["visible", "hidden"],
 );
+
+export const bookingRequestStatusEnum = pgEnum("booking_request_status", [
+  "requested",
+  "accepted",
+  "declined",
+]);
+
+export const notificationTypeEnum = pgEnum("notification_type", [
+  "booking_request_received",
+  "booking_request_accepted",
+  "booking_request_declined",
+]);
 
 export const users = pgTable(
   "users",
@@ -371,6 +384,208 @@ export const serviceListings = pgTable(
     ),
     check("service_listings_currency_inr", sql`${table.currency} = 'INR'`),
     check("service_listings_version_positive", sql`${table.version} > 0`),
+  ],
+);
+
+export const bookingRequests = pgTable(
+  "booking_requests",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    customerUserId: uuid("customer_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    professionalUserId: uuid("professional_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    submittedServiceListingIdSnapshot: uuid(
+      "submitted_service_listing_id_snapshot",
+    ).notNull(),
+    serviceListingId: uuid("service_listing_id").references(
+      () => serviceListings.id,
+      { onDelete: "set null" },
+    ),
+    serviceTitleSnapshot: varchar("service_title_snapshot", {
+      length: 120,
+    }).notNull(),
+    serviceDescriptionSnapshot: varchar("service_description_snapshot", {
+      length: 1200,
+    }).notNull(),
+    serviceCitySnapshot: varchar("service_city_snapshot", {
+      length: 120,
+    }).notNull(),
+    serviceRegionSnapshot: varchar("service_region_snapshot", {
+      length: 120,
+    }),
+    serviceCategorySlugSnapshot: varchar("service_category_slug_snapshot", {
+      length: 64,
+    }).notNull(),
+    serviceCategoryNameSnapshot: varchar("service_category_name_snapshot", {
+      length: 100,
+    }).notNull(),
+    servicePricingMethodSnapshot: serviceListingPricingMethodEnum(
+      "service_pricing_method_snapshot",
+    ).notNull(),
+    servicePriceAmountPaiseSnapshot: integer(
+      "service_price_amount_paise_snapshot",
+    ),
+    serviceCurrencySnapshot: varchar("service_currency_snapshot", {
+      length: 3,
+    }).notNull(),
+    providerDisplayNameSnapshot: varchar("provider_display_name_snapshot", {
+      length: 120,
+    }).notNull(),
+    eventType: varchar("event_type", { length: 120 }).notNull(),
+    eventDate: date("event_date", { mode: "string" }).notNull(),
+    eventTimezone: varchar("event_timezone", { length: 64 }).notNull(),
+    eventCity: varchar("event_city", { length: 120 }).notNull(),
+    eventRegion: varchar("event_region", { length: 120 }),
+    eventVenueOrArea: varchar("event_venue_or_area", { length: 200 }),
+    guestCount: integer("guest_count").notNull(),
+    budgetMinAmountPaise: integer("budget_min_amount_paise"),
+    budgetMaxAmountPaise: integer("budget_max_amount_paise"),
+    additionalNotes: varchar("additional_notes", { length: 1200 }),
+    status: bookingRequestStatusEnum("status").notNull().default("requested"),
+    idempotencyKey: uuid("idempotency_key").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("booking_requests_customer_idempotency_unique").on(
+      table.customerUserId,
+      table.idempotencyKey,
+    ),
+    check(
+      "booking_requests_participants_distinct",
+      sql`${table.customerUserId} <> ${table.professionalUserId}`,
+    ),
+    index("booking_requests_customer_created_idx").on(
+      table.customerUserId,
+      table.createdAt,
+      table.id,
+    ),
+    index("booking_requests_professional_status_created_idx").on(
+      table.professionalUserId,
+      table.status,
+      table.createdAt,
+      table.id,
+    ),
+    check(
+      "booking_requests_service_snapshot_nonblank",
+      sql`(
+        char_length(btrim(${table.serviceTitleSnapshot})) BETWEEN 2 AND 120
+        AND char_length(btrim(${table.serviceDescriptionSnapshot})) BETWEEN 20 AND 1200
+        AND char_length(btrim(${table.serviceCitySnapshot})) BETWEEN 2 AND 120
+        AND (${table.serviceRegionSnapshot} IS NULL OR char_length(btrim(${table.serviceRegionSnapshot})) BETWEEN 2 AND 120)
+        AND char_length(btrim(${table.serviceCategorySlugSnapshot})) BETWEEN 1 AND 64
+        AND char_length(btrim(${table.serviceCategoryNameSnapshot})) BETWEEN 2 AND 100
+        AND char_length(btrim(${table.providerDisplayNameSnapshot})) BETWEEN 2 AND 120
+      )`,
+    ),
+    check(
+      "booking_requests_service_price_consistent",
+      sql`(
+        (${table.servicePricingMethodSnapshot} = 'quote_only' AND ${table.servicePriceAmountPaiseSnapshot} IS NULL)
+        OR (${table.servicePricingMethodSnapshot} IN ('fixed', 'starting_at') AND ${table.servicePriceAmountPaiseSnapshot} IS NOT NULL AND ${table.servicePriceAmountPaiseSnapshot} >= 0)
+      )`,
+    ),
+    check(
+      "booking_requests_service_currency_inr",
+      sql`${table.serviceCurrencySnapshot} = 'INR'`,
+    ),
+    check(
+      "booking_requests_event_fields_valid",
+      sql`(
+        char_length(btrim(${table.eventType})) BETWEEN 2 AND 120
+        AND char_length(btrim(${table.eventTimezone})) BETWEEN 1 AND 64
+        AND char_length(btrim(${table.eventCity})) BETWEEN 2 AND 120
+        AND (${table.eventRegion} IS NULL OR char_length(btrim(${table.eventRegion})) BETWEEN 2 AND 120)
+        AND (${table.eventVenueOrArea} IS NULL OR char_length(btrim(${table.eventVenueOrArea})) BETWEEN 2 AND 200)
+        AND (${table.additionalNotes} IS NULL OR char_length(btrim(${table.additionalNotes})) BETWEEN 1 AND 1200)
+      )`,
+    ),
+    check(
+      "booking_requests_guest_count_valid",
+      sql`${table.guestCount} BETWEEN 1 AND 100000`,
+    ),
+    check(
+      "booking_requests_budget_nonnegative",
+      sql`((${table.budgetMinAmountPaise} IS NULL OR ${table.budgetMinAmountPaise} >= 0) AND (${table.budgetMaxAmountPaise} IS NULL OR ${table.budgetMaxAmountPaise} >= 0))`,
+    ),
+    check(
+      "booking_requests_budget_ordered",
+      sql`(${table.budgetMinAmountPaise} IS NULL OR ${table.budgetMaxAmountPaise} IS NULL OR ${table.budgetMinAmountPaise} <= ${table.budgetMaxAmountPaise})`,
+    ),
+  ],
+);
+
+export const bookingStatusHistory = pgTable(
+  "booking_status_history",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    bookingRequestId: uuid("booking_request_id")
+      .notNull()
+      .references(() => bookingRequests.id, { onDelete: "restrict" }),
+    previousStatus: bookingRequestStatusEnum("previous_status"),
+    newStatus: bookingRequestStatusEnum("new_status").notNull(),
+    actorUserId: uuid("actor_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    reason: varchar("reason", { length: 500 }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("booking_status_history_request_created_idx").on(
+      table.bookingRequestId,
+      table.createdAt,
+      table.id,
+    ),
+    check(
+      "booking_status_history_transition_valid",
+      sql`((${table.previousStatus} IS NULL AND ${table.newStatus} = 'requested') OR (${table.previousStatus} IS NOT NULL AND ${table.previousStatus} <> ${table.newStatus}))`,
+    ),
+    check(
+      "booking_status_history_reason_valid",
+      sql`(${table.reason} IS NULL OR char_length(btrim(${table.reason})) BETWEEN 1 AND 500)`,
+    ),
+  ],
+);
+
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    recipientUserId: uuid("recipient_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    type: notificationTypeEnum("type").notNull(),
+    bookingRequestId: uuid("booking_request_id")
+      .notNull()
+      .references(() => bookingRequests.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("notifications_request_recipient_type_unique").on(
+      table.bookingRequestId,
+      table.recipientUserId,
+      table.type,
+    ),
+    index("notifications_recipient_created_idx").on(
+      table.recipientUserId,
+      table.createdAt,
+      table.id,
+    ),
+    index("notifications_recipient_unread_created_idx")
+      .on(table.recipientUserId, table.createdAt, table.id)
+      .where(sql`${table.readAt} IS NULL`),
   ],
 );
 
